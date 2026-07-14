@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="color-scheme" content="only light">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ねこキャッチャー ― 猫、飼えない。だから、ここで飼う。</title>
+<meta name="description" content="クレーンゲームで捕まえた猫が、あなたのお部屋で暮らします。無料・インストール不要・スマホOK。">
+<style>
+  :root{
+    color-scheme: only light;
+    --ink:#3a2e2a; --cream:#fdf6ec; --paper:#fffdf8;
+    --pink:#ff8fab; --pinkD:#e26a8a; --gold:#ffc94d; --goldD:#b98a1c;
+    --sky:#bfe0ee; --grass:#3ea55c;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html{scroll-behavior:smooth}
+  body{background:var(--cream);color:var(--ink);
+    font-family:"Hiragino Maru Gothic ProN","BIZ UDGothic","Yu Gothic",system-ui,sans-serif;
+    overflow-x:hidden}
+  img,canvas,video{display:block;max-width:100%}
+  section{padding:64px 20px}
+  h2{font-size:clamp(22px,5vw,32px);text-align:center;margin-bottom:8px;letter-spacing:.03em}
+  .sub{color:#8a7b70;text-align:center;font-size:clamp(13px,3vw,15px);margin-bottom:36px}
+  .inner{max-width:960px;margin:0 auto}
+
+  /* ---------- 音楽ボタン ---------- */
+  #musicBtn{position:fixed;top:14px;right:14px;z-index:90;border:2px solid var(--goldD);
+    border-radius:999px;padding:8px 16px;font-weight:800;font-size:13px;cursor:pointer;
+    background:var(--gold);color:#5a3d00;box-shadow:0 4px 0 var(--goldD);transition:transform .06s}
+  #musicBtn:active{transform:translateY(3px);box-shadow:none}
+  #musicBtn.on{background:#fff;border-color:var(--pinkD);color:var(--pinkD);box-shadow:0 4px 0 var(--pinkD)}
+
+  /* ---------- ヒーロー ---------- */
+  .hero{position:relative;min-height:calc(var(--vh,1vh)*92);display:flex;flex-direction:column;
+    align-items:center;justify-content:center;text-align:center;padding:80px 20px 56px;
+    background:linear-gradient(180deg,#ffe9f0 0%, var(--cream) 78%);overflow:hidden}
+  .hero .paws{position:absolute;inset:0;pointer-events:none;opacity:.5;font-size:26px}
+  .hero .paws span{position:absolute;animation:floaty 7s ease-in-out infinite}
+  @keyframes floaty{0%,100%{transform:translateY(0) rotate(-8deg)}50%{transform:translateY(-16px) rotate(8deg)}}
+  /* ヒーロー動画：720x720の実プレイ動画2本をクロスフェードで交互再生 */
+  .heroMedia{position:relative;width:min(78vw,320px);height:min(78vw,320px);margin:0 auto 14px;
+    border-radius:28px;overflow:hidden;background:#0e1a24;
+    box-shadow:0 16px 40px rgba(226,106,138,.35), 0 0 0 6px #fff}
+  .heroMedia video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+    opacity:0;transition:opacity .6s}
+  .heroMedia video.show{opacity:1}
+  .hero h1{font-size:clamp(28px,7.4vw,52px);line-height:1.35;letter-spacing:.02em;
+    text-shadow:0 2px 0 #fff}
+  .hero h1 .accent{color:var(--pinkD)}
+  .hero p.lead{margin:14px 0 26px;font-size:clamp(14px,3.6vw,18px);line-height:2;color:#6d5b52}
+  .cta{display:inline-block;background:linear-gradient(180deg,#ffb1c4,var(--pink) 60%,var(--pinkD));
+    color:#5c1226;font-weight:900;font-size:clamp(17px,4.6vw,22px);letter-spacing:.06em;
+    padding:18px 44px;border-radius:999px;text-decoration:none;
+    box-shadow:0 7px 0 #a72e47,0 14px 26px rgba(226,106,138,.4);transition:transform .07s,box-shadow .07s}
+  .cta:active{transform:translateY(5px);box-shadow:0 2px 0 #a72e47}
+  .cta small{display:block;font-size:.58em;font-weight:700;letter-spacing:.12em;opacity:.85}
+  .hero .free{margin-top:16px;font-size:13px;color:#8a7b70}
+  .hero .free b{color:var(--pinkD)}
+
+  /* ---------- 共感セクション ---------- */
+  .empathy{background:var(--paper)}
+  .reasons{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;max-width:760px;margin:0 auto 30px}
+  .reason{background:var(--cream);border:2px solid #f0e4d4;border-radius:18px;padding:20px 12px;
+    text-align:center;font-weight:700;font-size:clamp(13px,3.4vw,16px);line-height:1.8}
+  .reason em{display:block;font-style:normal;font-size:2em;margin-bottom:6px}
+  .empathy .answer{text-align:center;font-size:clamp(20px,5.4vw,30px);font-weight:900;letter-spacing:.05em}
+  .empathy .answer span{color:var(--pinkD)}
+  @media (max-width:480px){ .reasons{grid-template-columns:1fr;max-width:340px} }
+
+  /* ---------- カルーセル ---------- */
+  .showcase{background:linear-gradient(180deg,var(--cream),#eaf6ee)}
+  .car{position:relative;max-width:560px;margin:0 auto}
+  .track{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;gap:16px;
+    padding:4px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .track::-webkit-scrollbar{display:none}
+  .slide{flex:0 0 100%;scroll-snap-align:center;border-radius:22px;overflow:hidden;
+    background:#101c26;box-shadow:0 14px 34px rgba(58,46,42,.22);position:relative}
+  /* スクショは縦長(スマホ画面)なので、縦箱＋containで全体を見せる */
+  .slide .view{width:100%;height:min(62vh,540px);position:relative}
+  .slide img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+  .slide .cap{position:absolute;left:0;right:0;bottom:0;padding:36px 18px 14px;color:#fff;
+    background:linear-gradient(transparent,rgba(10,16,22,.82));font-weight:800;
+    font-size:clamp(15px,4vw,19px);letter-spacing:.03em;text-shadow:0 2px 4px rgba(0,0,0,.5)}
+  .slide .cap small{display:block;font-weight:600;font-size:.72em;opacity:.9;margin-top:3px}
+  .navBtn{position:absolute;top:50%;transform:translateY(-50%);z-index:5;width:42px;height:42px;
+    border:none;border-radius:50%;background:rgba(255,255,255,.92);color:var(--ink);
+    font-size:18px;font-weight:900;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.25)}
+  #prevBtn{left:-8px} #nextBtn{right:-8px}
+  .dots{display:flex;justify-content:center;gap:9px;margin-top:18px}
+  .dots button{width:11px;height:11px;border-radius:50%;border:none;background:#d8c9b8;cursor:pointer;
+    transition:transform .2s,background .2s}
+  .dots button.on{background:var(--pinkD);transform:scale(1.35)}
+
+  /* ---------- 遊び方3ステップ ---------- */
+  .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;max-width:820px;margin:0 auto}
+  .step{background:var(--paper);border-radius:20px;padding:26px 18px;text-align:center;
+    box-shadow:0 6px 18px rgba(58,46,42,.08)}
+  .step .n{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;
+    border-radius:50%;background:var(--gold);color:#5a3d00;font-weight:900;font-size:18px;margin-bottom:10px}
+  .step h3{font-size:clamp(15px,3.8vw,18px);margin-bottom:8px}
+  .step p{font-size:13.5px;line-height:1.9;color:#6d5b52}
+  @media (max-width:640px){ .steps{grid-template-columns:1fr;max-width:360px} }
+
+  /* ---------- ねこプラス（サブスク） ---------- */
+  .plus{background:linear-gradient(180deg,#eaf6ee,#fff3d9)}
+  .plusCard{max-width:640px;margin:0 auto;background:#fff;border:3px solid var(--gold);
+    border-radius:26px;overflow:hidden;box-shadow:0 16px 40px rgba(185,138,28,.2)}
+  .plusHead{background:linear-gradient(135deg,var(--gold),#ffde8f);padding:22px;text-align:center}
+  .plusHead h3{font-size:clamp(20px,5vw,26px);color:#5a3d00;letter-spacing:.05em}
+  .plusHead p{color:#7a5a10;font-weight:700;font-size:14px;margin-top:4px}
+  .plusBody{padding:26px 22px}
+  .benefit{display:flex;gap:14px;align-items:flex-start;padding:13px 0;border-bottom:1px dashed #eadfcc}
+  .benefit:last-child{border-bottom:none}
+  .benefit .ico{font-size:24px;flex:none}
+  .benefit b{display:block;font-size:15.5px;margin-bottom:2px}
+  .benefit span{font-size:13px;color:#6d5b52;line-height:1.8}
+  .mikeRow{display:flex;align-items:center;gap:16px;background:var(--cream);border-radius:16px;
+    padding:12px;margin:18px 0}
+  #mikeCv{width:110px;height:110px;flex:none;border-radius:14px;background:#ffe9f0}
+  .mikeRow p{font-size:13px;line-height:1.9}
+  .mikeRow b{color:var(--pinkD)}
+  .price{ text-align:center;margin:20px 0 6px;font-weight:900;font-size:clamp(22px,6vw,30px)}
+  .price small{font-size:.5em;font-weight:700;color:#8a7b70}
+  .plusNote{text-align:center;font-size:12px;color:#8a7b70;line-height:1.9}
+  .plusNote b{color:var(--pinkD)}
+
+  /* ---------- FAQ ---------- */
+  .faq details{max-width:640px;margin:0 auto 12px;background:var(--paper);border-radius:14px;
+    padding:16px 20px;box-shadow:0 3px 10px rgba(58,46,42,.06)}
+  .faq summary{font-weight:800;cursor:pointer;font-size:15px;list-style:none;display:flex;gap:10px}
+  .faq summary::before{content:'🐾'}
+  .faq details p{margin-top:10px;font-size:13.5px;line-height:2;color:#6d5b52}
+
+  /* ---------- 最終CTA・フッター ---------- */
+  .final{background:linear-gradient(180deg,#fff3d9,#ffe9f0);text-align:center;padding-bottom:120px}
+  .final h2{margin-bottom:24px}
+  footer{background:#2a2320;color:#cbbfb6;text-align:center;padding:26px 16px 110px;font-size:12px;line-height:2.2}
+  footer a{color:#e8ba6a;text-decoration:none}
+
+  /* ---------- 追従CTA（スマホ） ---------- */
+  #stickyCta{position:fixed;left:0;right:0;bottom:0;z-index:80;padding:10px 14px
+    calc(10px + env(safe-area-inset-bottom));background:rgba(255,253,248,.94);
+    backdrop-filter:blur(8px);border-top:2px solid #f0dcc4;display:flex;justify-content:center;
+    transform:translateY(110%);transition:transform .35s}
+  #stickyCta.show{transform:translateY(0)}
+  #stickyCta .cta{font-size:16px;padding:13px 38px;box-shadow:0 5px 0 #a72e47}
+</style>
+</head>
+<body>
+
+<button id="musicBtn">♪ 音楽をつける</button>
+
+<!-- ================= ヒーロー ================= -->
+<header class="hero">
+  <div class="paws" aria-hidden="true">
+    <span style="top:12%;left:8%">🐾</span><span style="top:24%;right:10%;animation-delay:1.2s">🐾</span>
+    <span style="bottom:30%;left:14%;animation-delay:2.1s">🎀</span>
+    <span style="bottom:18%;right:16%;animation-delay:.6s">🐟</span>
+    <span style="top:48%;left:4%;animation-delay:3s">✨</span>
+  </div>
+  <div class="heroMedia">
+    <video id="hv1" src="assets/LP/hero1.mp4" muted playsinline preload="auto"></video>
+    <video id="hv2" src="assets/LP/hero2.mp4" muted playsinline preload="auto"></video>
+  </div>
+  <h1>猫、飼えない。<br>だから、<span class="accent">ここで飼う。</span></h1>
+  <p class="lead">クレーンゲームで捕まえた猫が、そのままお部屋に住みつきます。<br>
+     エサをあげて、いっしょに遊んで、眠る姿をながめる毎日。</p>
+  <a class="cta" href="game.html">いますぐ、猫をむかえる<small>無料・インストール不要・スマホOK</small></a>
+  <p class="free">会員登録も<b>いりません</b>。このまま3秒ではじまります。</p>
+</header>
+
+<!-- ================= 共感 ================= -->
+<section class="empathy">
+  <h2>「飼いたい」のに、飼えない。</h2>
+  <p class="sub">その気持ち、ぜんぶわかります</p>
+  <div class="reasons">
+    <div class="reason"><em>🏠</em>賃貸だから<br>ペット禁止</div>
+    <div class="reason"><em>🤧</em>家族が<br>猫アレルギー</div>
+    <div class="reason"><em>⏰</em>忙しくて<br>お世話に自信がない</div>
+  </div>
+  <p class="answer">ここでは、<span>ぜんぶ大丈夫。</span></p>
+</section>
+
+<!-- ================= ハイライト・カルーセル ================= -->
+<section class="showcase">
+  <h2>あなたを待っている世界</h2>
+  <p class="sub">← スワイプでハイライトを見る →</p>
+  <div class="car">
+    <button class="navBtn" id="prevBtn" aria-label="前へ">‹</button>
+    <div class="track" id="track">
+      <div class="slide"><div class="view"><img src="assets/LP/cs0.png" alt="クレーンゲーム画面"></div>
+        <div class="cap">そっと、つかまえる<small>ステージ2、茶ねこと黒ねこが待つ台</small></div></div>
+      <div class="slide"><div class="view"><img src="assets/LP/cs1.png" alt="白ねこ" loading="lazy"></div>
+        <div class="cap">白ねこと、ごあいさつ<small>クリックすると、近くに来てくれます</small></div></div>
+      <div class="slide"><div class="view"><img src="assets/LP/cs2.png" alt="ピンクねこ" loading="lazy"></div>
+        <div class="cap">ピンクねこ、ふわっふわ<small>オッドアイのおしゃれさん</small></div></div>
+      <div class="slide"><div class="view"><img src="assets/LP/cs3.png" alt="笑う茶ねこ" loading="lazy"></div>
+        <div class="cap">笑ってる……？<small>ごきげんタイムをキャッチ</small></div></div>
+      <div class="slide"><div class="view"><img src="assets/LP/cs4.png" alt="レインボーねこ" loading="lazy"></div>
+        <div class="cap">レインボーねこ、実在します<small>ステージ3で待っています</small></div></div>
+      <div class="slide"><div class="view"><img src="assets/LP/cs5.png" alt="エサを食べる白ねこ" loading="lazy"></div>
+        <div class="cap">ごはん、おいしいね<small>エサやりで、もっと仲良しに</small></div></div>
+      <div class="slide"><div class="view"><img src="assets/LP/cs6.png" alt="マイルーム全景" loading="lazy"></div>
+        <div class="cap">みんなで暮らす、マイルーム<small>家具を置いて、居心地よく</small></div></div>
+      <div class="slide"><div class="view"><img src="assets/LP/cs7.png" alt="庭を冒険する猫" loading="lazy"></div>
+        <div class="cap">庭へ、小さな冒険<small>ちゃんと窓から出ていきます</small></div></div>
+    </div>
+    <button class="navBtn" id="nextBtn" aria-label="次へ">›</button>
+    <div class="dots" id="dots"></div>
+  </div>
+</section>
+
+<!-- ================= 遊び方 ================= -->
+<section>
+  <h2>はじめかたは、3ステップ</h2>
+  <p class="sub">むずかしいことは、なにもありません</p>
+  <div class="steps">
+    <div class="step"><span class="n">1</span><h3>🕹 クレーンで捕まえる</h3>
+      <p>矢印とボタンだけのかんたん操作。寝そべった猫は捕まえやすい、なんてコツも。</p></div>
+    <div class="step"><span class="n">2</span><h3>🏠 お部屋にお迎え</h3>
+      <p>捕まえた猫は自動でマイルームへ。家具を置いて、居心地のいい部屋に。</p></div>
+    <div class="step"><span class="n">3</span><h3>🐟 いっしょに暮らす</h3>
+      <p>エサやり、お昼寝、庭の冒険。あなたが来るのを、猫はちゃんと待っています。</p></div>
+  </div>
+</section>
+
+<!-- ================= ねこプラス ================= -->
+<section class="plus">
+  <h2>もっと、猫まみれの毎日へ</h2>
+  <p class="sub">月額プラン「ねこプラス」（準備中）</p>
+  <div class="plusCard">
+    <div class="plusHead"><h3>🎀 ねこプラス</h3><p>毎日がちょっとうれしい、月額プラン</p></div>
+    <div class="plusBody">
+      <div class="benefit"><span class="ico">🪙</span>
+        <div><b>毎日ログインでコインがもらえる</b>
+        <span>朝、コインを受けとって1プレイ。それが日課になります。</span></div></div>
+      <div class="benefit"><span class="ico">🐈</span>
+        <div><b>限定の猫がステージに登場</b>
+        <span>三毛、ハチワレ、靴下猫……ここでしか会えない子たち。</span></div></div>
+      <div class="benefit"><span class="ico">🛋</span>
+        <div><b>限定家具＆お部屋の模様替え</b>
+        <span>和室、北欧風、季節のテーマで、部屋ごと衣替え。</span></div></div>
+      <div class="benefit"><span class="ico">💌</span>
+        <div><b>猫からの「お手紙」</b>
+        <span>今日のことばが増えて、ときどき猫から手紙が届きます。</span></div></div>
+      <div class="mikeRow">
+        <canvas id="mikeCv"></canvas>
+        <p><b>限定・三毛ねこ（ちらっと先行公開）</b><br>
+        ねこプラスのステージにだけ、あらわれます。いまはくるくる回って、あなたを待っています。</p>
+      </div>
+      <p class="price">月額 480円<small>（税込・予定）</small></p>
+      <p class="plusNote">いつでも1タップで解約できます。<br>
+        <b>いまは準備期間中につき、ぜんぶ無料で遊べます</b>——はじめるなら、実はいまがいちばんお得。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= FAQ ================= -->
+<section class="faq">
+  <h2>よくある質問</h2>
+  <p class="sub">はじめる前の、ちいさな心配ごとに</p>
+  <details><summary>本当に無料ですか？</summary>
+    <p>はい。いまはすべての機能を無料で遊べます。将来、月額プラン「ねこプラス」を予定していますが、基本プレイはずっと無料です。</p></details>
+  <details><summary>アプリのインストールは必要？</summary>
+    <p>不要です。スマホでもPCでも、ブラウザで開くだけで遊べます。</p></details>
+  <details><summary>お世話をサボったら、猫はどうなりますか？</summary>
+    <p>いなくなったりはしません。1時間かまってあげないと眠ってしまいますが、あなたが来ればちゃんと起きます。罪悪感なく、あなたのペースで大丈夫。</p></details>
+  <details><summary>猫は何匹まで飼えますか？</summary>
+    <p>上限はありません。捕まえた分だけ、お部屋の壁ぎわに（窓に近い順で行儀よく）並んでいきます。</p></details>
+</section>
+
+<!-- ================= 最終CTA ================= -->
+<section class="final">
+  <h2>今夜から、あなたの猫がいる暮らし。</h2>
+  <a class="cta" href="game.html">無料で、猫をむかえる<small>3秒ではじまります</small></a>
+</section>
+
+<footer>
+  ねこキャッチャー 3D ｜ 個人開発プロジェクト<br>
+  <a href="game.html">ゲームで遊ぶ</a> ・ <a href="room.html">マイルーム</a>
+</footer>
+
+<div id="stickyCta"><a class="cta" href="game.html">🐈 無料で猫をむかえる</a></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="js/cat-shared.js"></script>
+<script>
+'use strict';
+/* ============================================================
+   LP スクリプト
+   - 実ゲームと同じ buildCatModel() でライブ3Dハイライトを描画
+   - カルーセル（scroll-snap＋自動送り。可視スライドのみレンダリング）
+   - WebAudioで生成する自作チップチューンBGM（著作権フリー）
+   ============================================================ */
+
+// ---------- モバイル実表示高さ（他ページと同じ--vh方式） ----------
+function setVhVar(){
+  const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+  document.documentElement.style.setProperty('--vh', `${h*0.01}px`);
+}
+setVhVar();
+addEventListener('resize', setVhVar);
+if(window.visualViewport) window.visualViewport.addEventListener('resize', setVhVar);
+
+// ============================================================
+// 3Dシーン共通基盤
+// ============================================================
+const scenes = [];   // {renderer, scene, camera, canvas, tick(t,dt), active}
+
+function makeScene(canvas, {bg=null, camY=1.4, camZ=4.6, lookY=.8}={}){
+  const renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha: bg===null});
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  const scene = new THREE.Scene();
+  if(bg !== null) scene.background = new THREE.Color(bg);
+  const camera = new THREE.PerspectiveCamera(42, 1, .1, 60);
+  camera.position.set(0, camY, camZ);
+  camera.lookAt(0, lookY, 0);
+  scene.add(new THREE.AmbientLight(0xfff4e0, .75));
+  const sun = new THREE.DirectionalLight(0xffffff, .85);
+  sun.position.set(3, 6, 4);
+  scene.add(sun);
+  const entry = {renderer, scene, camera, canvas, tick:null, active:false};
+  scenes.push(entry);
+  return entry;
+}
+function sizeSceneToCanvas(s){
+  const w = s.canvas.clientWidth || 300, h = s.canvas.clientHeight || 300;
+  if(s.canvas.width !== w*renderScale() || s.canvas.height !== h*renderScale()){
+    s.renderer.setSize(w, h, false);
+    s.camera.aspect = w/h;
+    s.camera.updateProjectionMatrix();
+  }
+}
+function renderScale(){ return Math.min(devicePixelRatio, 2); }
+
+function addCat(scene, def, {x=0, y=0, z=0, ry=-Math.PI/2, scale=1}={}){
+  const m = buildCatModel(def);
+  m.group.position.set(x, y, z);
+  m.group.rotation.y = ry;
+  m.group.scale.setScalar(scale);
+  scene.add(m.group);
+  if(def.rainbow) m.rainbowMeshes = applyRainbowStripes(m.group, scale);
+  m.blinkT = Math.random()*4;
+  return m;
+}
+// まばたき・しっぽ・呼吸の共通アイドル
+function idleCat(m, t, dt){
+  m.blinkT -= dt;
+  const closed = m.blinkT < .12;
+  for(const e of m.eyes) e.scale.y = closed ? .08 : 1;
+  if(m.blinkT < 0) m.blinkT = 2.2 + Math.random()*3;
+  m.tailRoot.rotation.x = Math.sin(t*1.7)*.22;
+  m.tailSegs.forEach((s,i)=>{ s.rotation.x = Math.sin(t*1.7 - i*.55)*.16; });
+  m.head.rotation.y = Math.sin(t*.5)*.3;
+}
+function walkCat(m, t, speed=7){
+  const a = Math.sin(t*speed)*.55;
+  m.legs[0].rotation.z = a; m.legs[3].rotation.z = a;
+  m.legs[1].rotation.z = -a; m.legs[2].rotation.z = -a;
+  m.group.position.y = Math.abs(Math.sin(t*speed))*.05;
+}
+
+// ============================================================
+// ねこプラス：限定・三毛ねこのプレビュー
+// ============================================================
+{
+  const s = makeScene(document.getElementById('mikeCv'), {camY:1.15, camZ:3.9, lookY:.7});
+  const mike = { ...colorDef('三毛ねこ', 0, '#f3ede2', '#d98a4a', '#3a332e', '#e8c0a8') };
+  const cat = addCat(s.scene, mike, {scale:1});
+  s.tick = (t, dt)=>{
+    cat.group.rotation.y += dt*.9;
+    idleCat(cat, t, dt);
+  };
+}
+
+// ============================================================
+// 可視判定つきレンダリングループ（見えているシーンだけ描画）
+// ============================================================
+const io = new IntersectionObserver(entries=>{
+  for(const en of entries){
+    const s = scenes.find(x=>x.canvas === en.target);
+    if(s) s.active = en.isIntersecting;
+  }
+}, {threshold: .18});
+for(const s of scenes) io.observe(s.canvas);
+
+let last = performance.now();
+function loop(now){
+  requestAnimationFrame(loop);
+  const dt = Math.min(.05, (now-last)/1000); last = now;
+  const t = now/1000;
+  for(const s of scenes){
+    if(!s.active) continue;
+    sizeSceneToCanvas(s);
+    if(s.tick) s.tick(t, dt);
+    s.renderer.render(s.scene, s.camera);
+  }
+}
+requestAnimationFrame(loop);
+
+// ============================================================
+// カルーセル（scroll-snap＋ドット＋自動送り）
+// ============================================================
+{
+  const track = document.getElementById('track');
+  const slides = [...track.children];
+  const dotsWrap = document.getElementById('dots');
+  slides.forEach((_, i)=>{
+    const b = document.createElement('button');
+    b.addEventListener('click', ()=>goTo(i));
+    dotsWrap.appendChild(b);
+  });
+  const dots = [...dotsWrap.children];
+  let idx = 0, userTouchedAt = 0;
+  function currentIndex(){
+    return Math.round(track.scrollLeft / track.clientWidth);
+  }
+  function goTo(i){
+    idx = (i + slides.length) % slides.length;
+    track.scrollTo({left: idx * track.clientWidth, behavior:'smooth'});
+  }
+  function paintDots(){
+    dots.forEach((d,i)=>d.classList.toggle('on', i===idx));
+  }
+  track.addEventListener('scroll', ()=>{ idx = currentIndex(); paintDots(); }, {passive:true});
+  track.addEventListener('touchstart', ()=>userTouchedAt = Date.now(), {passive:true});
+  track.addEventListener('pointerdown', ()=>userTouchedAt = Date.now());
+  document.getElementById('prevBtn').addEventListener('click', ()=>{ userTouchedAt=Date.now(); goTo(idx-1); });
+  document.getElementById('nextBtn').addEventListener('click', ()=>{ userTouchedAt=Date.now(); goTo(idx+1); });
+  setInterval(()=>{                    // 自動送り（操作後8秒は休止）
+    if(Date.now() - userTouchedAt < 8000) return;
+    goTo(idx+1);
+  }, 4500);
+  paintDots(); dots[0].classList.add('on');
+}
+
+// ============================================================
+// ヒーロー動画：2本を交互にクロスフェード再生
+// ============================================================
+{
+  const vids = [document.getElementById('hv1'), document.getElementById('hv2')];
+  let cur = 0;
+  function playNext(){
+    const nxt = 1 - cur;
+    vids[nxt].currentTime = 0;
+    vids[nxt].play().catch(()=>{});
+    vids[nxt].classList.add('show');
+    vids[cur].classList.remove('show');
+    cur = nxt;
+  }
+  for(const v of vids) v.addEventListener('ended', playNext);
+  vids[0].classList.add('show');
+  vids[0].play().catch(()=>{});
+  // モバイルで自動再生がブロックされた場合、最初のタップで開始する保険
+  document.addEventListener('pointerdown', ()=>{
+    if(vids[cur].paused) vids[cur].play().catch(()=>{});
+  }, {once:true});
+}
+
+// ============================================================
+// 追従CTA：ヒーローを通り過ぎたら表示
+// ============================================================
+{
+  const sticky = document.getElementById('stickyCta');
+  const hero = document.querySelector('.hero');
+  new IntersectionObserver(en=>{
+    sticky.classList.toggle('show', !en[0].isIntersecting);
+  }, {threshold:.25}).observe(hero);
+}
+
+// ============================================================
+// BGM：WebAudioで生成する自作チップチューン（著作権フリー）
+//  - かわいい8bit風。C→G→Am→F進行、ペンタトニックの主旋律
+//  - ブラウザの自動再生制限のため、ボタン押下で開始
+// ============================================================
+const music = (()=>{
+  let ctx = null, master = null, timer = null, step = 0, nextTime = 0;
+  const BPM = 132, SPB = 60/BPM/2;               // 8分音符1つの秒数
+  const N = m => 440 * Math.pow(2, (m-69)/12);    // MIDI→Hz
+  // 8小節ループ（8分音符×64ステップ）。-1=休符
+  const CHORDS = [ [48,52,55],[43,47,50],[45,48,52],[41,45,48] ];  // C,G,Am,F
+  const BASS   = [36,36,43,43, 31,31,38,38, 33,33,40,40, 29,29,36,36];
+  const LEAD = [
+    72,-1,76,-1, 79,-1,76,72, 74,-1,72,-1, 71,-1,-1,-1,
+    72,-1,76,-1, 79,-1,81,79, 76,-1,74,-1, 72,-1,-1,-1,
+    69,-1,72,-1, 76,-1,72,69, 71,-1,74,-1, 71,-1,-1,-1,
+    65,-1,69,-1, 72,-1,69,65, 67,-1,71,-1, 72,-1,-1,-1,
+  ];
+  function tone(freq, t0, dur, type, vol, dest){
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(vol, t0+.012);
+    g.gain.exponentialRampToValueAtTime(.001, t0+dur);
+    o.connect(g); g.connect(dest);
+    o.start(t0); o.stop(t0+dur+.05);
+  }
+  function hat(t0){
+    const len = .04, buf = ctx.createBuffer(1, ctx.sampleRate*len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for(let i=0;i<d.length;i++) d[i] = (Math.random()*2-1)*(1-i/d.length);
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const g = ctx.createGain(); g.gain.value = .07;
+    const f = ctx.createBiquadFilter(); f.type='highpass'; f.frequency.value=6000;
+    src.connect(f); f.connect(g); g.connect(master);
+    src.start(t0);
+  }
+  function scheduleStep(i, t0){
+    const bar2 = Math.floor(i/16) % 4;                       // 2小節=16ステップごとにコード
+    if(i % 4 === 0)                                          // コード（4分ごと・柔らかく）
+      for(const m of CHORDS[bar2]) tone(N(m+12), t0, SPB*3.2, 'triangle', .045, master);
+    tone(N(BASS[i % 16]), t0, SPB*.9, 'triangle', .11, master);          // ベース
+    if(i % 2 === 1) hat(t0);                                              // 裏拍ハット
+    const lead = LEAD[i % 64];
+    if(lead > 0) tone(N(lead), t0, SPB*1.6, 'square', .06, master);       // 主旋律
+  }
+  function tickScheduler(){
+    while(nextTime < ctx.currentTime + .15){
+      scheduleStep(step, nextTime);
+      nextTime += SPB;
+      step++;
+    }
+  }
+  return {
+    start(){
+      if(!ctx){
+        ctx = new (window.AudioContext||window.webkitAudioContext)();
+        master = ctx.createGain(); master.gain.value = .5;
+        const comp = ctx.createDynamicsCompressor();
+        master.connect(comp); comp.connect(ctx.destination);
+      }
+      ctx.resume();
+      step = 0; nextTime = ctx.currentTime + .06;
+      timer = setInterval(tickScheduler, 30);
+    },
+    stop(){
+      clearInterval(timer); timer = null;
+      if(ctx) ctx.suspend();
+    },
+    get playing(){ return !!timer; },
+  };
+})();
+document.getElementById('musicBtn').addEventListener('click', function(){
+  if(music.playing){ music.stop(); this.textContent = '♪ 音楽をつける'; this.classList.remove('on'); }
+  else{ music.start(); this.textContent = '♪ 音楽を止める'; this.classList.add('on'); }
+});
+</script>
+</body>
+</html>

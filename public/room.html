@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="color-scheme" content="only light">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>ねこマイルーム</title>
+<style>
+  :root{
+    color-scheme: only light;
+    --cream:#fdf6ec; --gold:#ffc94d; --bar:#2a3a44; --line:rgba(255,201,77,.4);
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{width:100%;height:100%;overflow:hidden;background:#bfe0ee;color:var(--cream);
+    font-family:"Hiragino Maru Gothic ProN","BIZ UDGothic","Yu Gothic",system-ui,sans-serif}
+  /* モバイルはアドレスバーの出し引きで100vhが実際の表示領域より大きくなり、
+     フッターが画面外に隠れることがあるため、JSで計測した実ビューポート高さ
+     (--vh)を最終的な基準にする（100dvh未対応の環境向けの保険も兼ねる）。 */
+  html{height:-webkit-fill-available}
+  #app{display:flex;flex-direction:column;
+       height:100vh; height:100dvh;
+       height:-webkit-fill-available;
+       height:calc(var(--vh, 1vh) * 100)}
+
+  /* ---------- ヘッダー ----------
+     タイトル行(戻る/タイトル/メニュー)と統計行(ねこ/とくてん/コイン/エサ)を
+     別々のflexコンテナに分け、狭い画面では統計行がまるごと2行目に落ちるようにする
+     （1行に詰め込んで文字を無理に縮小/折り返す＝縦書きに見える、を防ぐ）。 */
+  header{flex:none;display:flex;flex-direction:column;gap:6px;
+         padding:10px 14px;background:var(--bar);border-bottom:2px solid var(--line);z-index:20;position:relative}
+  .headerTop{display:flex;justify-content:space-between;align-items:center;gap:10px;
+             flex-wrap:nowrap;min-width:0}
+  header h1{font-size:clamp(14px,2.6vw,21px);color:var(--gold);white-space:nowrap;
+            overflow:hidden;text-overflow:ellipsis;min-width:0}
+  header h1 small{opacity:.55;font-size:.6em;font-weight:400}
+  .stats{display:flex;gap:16px;font-weight:700;font-size:clamp(13px,2.2vw,16px);
+         flex-wrap:wrap;justify-content:center;white-space:nowrap}
+  .stats span{white-space:nowrap}
+  .stats b{color:var(--gold);font-size:1.2em;margin-left:.3em;font-variant-numeric:tabular-nums}
+  #menuBtn{border:2px solid var(--line);border-radius:10px;height:38px;padding:0 14px 0 12px;
+           background:rgba(255,255,255,.08);color:var(--cream);font-size:15px;font-weight:700;
+           cursor:pointer;display:flex;align-items:center;gap:6px;white-space:nowrap}
+  #menuBtn .hamIcon{font-size:19px;line-height:1}
+  #headerBackBtn{border:none;border-radius:10px;padding:8px 14px;font-weight:700;font-size:13px;
+           cursor:pointer;background:var(--gold);color:#5a3d00;box-shadow:0 3px 0 #b98a1c;flex:none}
+  #headerBackBtn:active{transform:translateY(2px);box-shadow:none}
+  /* ハンバーガーを押したときだけ現れるプルダウンメニュー */
+  .menu{position:absolute;top:100%;right:10px;margin-top:6px;min-width:210px;z-index:30;
+        background:rgba(30,40,48,.96);border:2px solid var(--line);border-radius:14px;
+        padding:10px;display:flex;flex-direction:column;gap:8px;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+  .menu-item{border:none;border-radius:10px;padding:9px 12px;font-weight:700;font-size:14px;
+             cursor:pointer;text-align:left;background:rgba(255,255,255,.1);color:var(--cream)}
+  .menu-item:active{background:rgba(255,255,255,.2)}
+  .shopList{display:flex;flex-direction:column;gap:6px;padding-left:8px}
+  .shop-item{border:none;border-radius:10px;padding:8px 12px;font-weight:700;font-size:13px;
+             cursor:pointer;display:flex;justify-content:space-between;gap:12px;
+             background:rgba(255,255,255,.06);color:var(--cream)}
+  .shop-item span{color:var(--gold)}
+  .shop-item:disabled{opacity:.45;cursor:default}
+
+  /* ---------- メイン(3D) ---------- */
+  main{flex:1;position:relative;min-height:0}
+  #stage{position:absolute;inset:0}
+  #stage canvas{display:block}
+  .msg{position:absolute;top:16%;left:50%;transform:translateX(-50%);
+       font-size:clamp(20px,4vw,34px);font-weight:800;color:var(--gold);
+       text-shadow:0 3px 0 rgba(0,0,0,.35);opacity:0;transition:opacity .3s;
+       pointer-events:none;z-index:15;white-space:nowrap}
+  .msg.show{opacity:1}
+
+  /* ---------- フッター ---------- */
+  footer{flex:none;display:flex;justify-content:space-between;align-items:center;gap:14px;
+         padding:16px 20px calc(16px + env(safe-area-inset-bottom));min-height:56px;
+         background:var(--bar);border-top:2px solid var(--line);z-index:20}
+  .hint{font-size:14.5px;opacity:.85;line-height:1.7}
+  .btn{border:none;border-radius:12px;padding:8px 14px;font-weight:700;font-size:13px;
+       cursor:pointer;user-select:none;box-shadow:0 4px 0 rgba(0,0,0,.3)}
+  .btn:active{transform:translateY(3px);box-shadow:0 1px 0 rgba(0,0,0,.3)}
+  @media (max-width:640px){ .hint .full{display:none} .hint .short{display:inline} }
+  .hint .short{display:none}
+
+  /* 猫クリック時のポップアップ：画面いっぱいに近いサイズで、動画を主役に大きく表示 */
+  .videoOverlay{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:50;
+                display:flex;align-items:center;justify-content:center;padding:14px}
+  .videoCard{width:min(96vw,760px);max-height:96vh;max-height:96dvh;
+             display:flex;flex-direction:column;gap:10px;
+             background:#0c1620;border-radius:20px;padding:14px;
+             box-shadow:0 16px 50px rgba(0,0,0,.55)}
+  .videoBox{position:relative;width:100%;flex:1 1 auto;min-height:0;
+            background:#000;border-radius:14px;overflow:hidden}
+  .videoBox video{width:100%;height:100%;object-fit:contain;display:block}
+  .videoClose{position:absolute;top:8px;right:8px;width:36px;height:36px;border:none;
+              border-radius:50%;background:rgba(0,0,0,.55);color:#fff;font-size:18px;
+              cursor:pointer;line-height:1;z-index:2}
+  .videoActions{flex:none;display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .videoActions button{border:none;border-radius:12px;padding:12px 6px;font-weight:700;
+                font-size:13px;cursor:pointer;background:rgba(255,255,255,.94);
+                color:#3a2e2a;box-shadow:0 3px 0 rgba(0,0,0,.25);line-height:1.3}
+  .videoActions button:active{transform:translateY(2px);box-shadow:none}
+  .videoActions button:disabled{opacity:.5;cursor:default}
+  .foodWarn{flex:none;background:#ffe1e1;color:#8a2a2a;
+            border-radius:10px;padding:9px 12px;font-size:13px;font-weight:700;text-align:center}
+  .phraseBox{flex:none;background:#fff8e6;color:#5a3d00;
+            border-radius:10px;padding:12px 16px;font-size:14px;line-height:1.7;text-align:center}
+  /* スマホ：ボタンを2列×2行にして押しやすいサイズを確保 */
+  @media (max-width:520px){
+    .videoActions{grid-template-columns:1fr 1fr}
+    .videoCard{padding:10px;gap:8px;width:min(98vw,760px);max-height:98vh;max-height:98dvh}
+  }
+  .hstats{gap:10px 14px;font-size:clamp(12px,3vw,15px)}
+  .hstats b{color:var(--gold);font-size:1.15em;margin-left:.25em;font-variant-numeric:tabular-nums}
+  /* 画面が狭い時は、統計(ねこ/とくてん/コイン/エサ)を項目間で均等配置にして詰まりにくくする */
+  @media (max-width:480px){ .hstats{justify-content:space-between;gap:6px 10px} }
+  .helpBtn{border:2px solid var(--line);border-radius:8px;padding:3px 10px;font-size:12px;
+           font-weight:700;background:rgba(255,255,255,.1);color:var(--cream);cursor:pointer;
+           margin-left:auto}
+  .helpOverlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:60;
+               display:flex;align-items:center;justify-content:center;padding:16px}
+  .helpCard{width:min(94vw,480px);max-height:80vh;max-height:80dvh;overflow:auto;
+            background:#1e2830;color:var(--cream);border-radius:18px;padding:22px;
+            box-shadow:0 14px 44px rgba(0,0,0,.5)}
+  .helpCard h2{color:var(--gold);font-size:17px;margin-bottom:14px}
+  .helpCard p{font-size:15px;line-height:2;margin-bottom:16px}
+  .helpCard .closeBtn{display:block;margin:0 auto;border:none;border-radius:12px;
+            padding:10px 28px;font-weight:700;font-size:14px;cursor:pointer;
+            background:var(--gold);color:#5a3d00;box-shadow:0 4px 0 #b98a1c}
+  .helpCard .closeBtn:active{transform:translateY(3px);box-shadow:none}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="headerTop">
+      <button id="headerBackBtn" v-if="hasOpener" @click="backToGame">🎮 ゲームへ戻る</button>
+      <h1>🏠 ねこマイルーム <small>v9</small></h1>
+      <button id="menuBtn" @click="menuOpen = !menuOpen"><span class="hamIcon">☰</span>メニュー</button>
+    </div>
+    <div class="stats hstats">
+      <span>ねこ<b>{{ hud.count }}</b></span>
+      <span>とくてん<b>{{ hud.points }}</b></span>
+      <span>コイン<b>{{ hud.coins }}</b></span>
+      <span>エサ<b>{{ hud.food }}</b></span>
+      <button class="helpBtn" @click="helpOpen = true">❓ 使い方</button>
+    </div>
+
+    <!-- 使い方ポップアップ：フッターの説明文をスマホでも確実に読めるようにする -->
+    <div class="helpOverlay" v-if="helpOpen" @click.self="helpOpen=false">
+      <div class="helpCard">
+        <h2>使い方</h2>
+        <p>
+          ドラッグで視点回転 ・ ホイール / ピンチでズーム<br>
+          家具の設置や部屋・猫のリセットは ☰ メニューから<br>
+          ゲームへ戻るのはヘッダーの🎮ボタンから<br>
+          ゲームの「🏠 マイルーム」ボタンから開くと、獲得した猫が自動で転送されてきます
+        </p>
+        <button class="closeBtn" @click="helpOpen=false">閉じる</button>
+      </div>
+    </div>
+
+    <!-- ハンバーガーを押したときのみ表示 -->
+    <div class="menu" v-if="menuOpen">
+      <button class="menu-item" @click="shopOpen = !shopOpen">🛒 家具を買う</button>
+      <div class="shopList" v-if="shopOpen">
+        <button class="shop-item" v-for="item in shop" :key="item.key"
+                :disabled="owned[item.key]" @click="buyFurniture(item.key); menuOpen=false; shopOpen=false">
+          {{ item.icon }} {{ item.label }}
+          <span>{{ owned[item.key] ? '設置済み' : item.price + 'コイン' }}</span>
+        </button>
+      </div>
+      <button class="menu-item" @click="buyFood(); menuOpen=false">🐟 エサを買う（魚フレーク・1コイン）</button>
+      <button class="menu-item" @click="buyCoins(); menuOpen=false">💰 コイン購入（+5コイン）</button>
+      <button class="menu-item" @click="convertPoints(); menuOpen=false">✨ とくてんをコインにする（10点→1コイン）</button>
+      <button class="menu-item" @click="doResetFurniture(); menuOpen=false">🪑 家具をリセット</button>
+      <button class="menu-item" @click="doResetCats(); menuOpen=false">🐱 猫をリセット</button>
+      <button class="menu-item" @click="goHome(); menuOpen=false">🏠 ホームページに戻る</button>
+    </div>
+  </header>
+
+  <main>
+    <div id="stage"></div>
+    <div class="msg" :class="{show: msg.show}">{{ msg.text }}</div>
+  </main>
+
+  <!-- 猫をクリックすると表示。その猫の動画をランダムに大きく、ボタンはその下に配置 -->
+  <div class="videoOverlay" v-if="videoOpen" @click.self="closeVideo">
+    <div class="videoCard">
+      <div class="videoBox">
+        <button class="videoClose" @click="closeVideo">✕</button>
+        <video ref="catVideo" :src="currentVideoUrl"
+               autoplay playsinline muted></video>
+      </div>
+      <div class="videoActions">
+        <button @click="doFeed">🐟 エサをやる</button>
+        <button @click="doPlayRoom">🧶 部屋で遊ぶ</button>
+        <button @click="doAdventure">🌿 冒険する</button>
+        <button @click="togglePhrase">📜 今日のことば</button>
+      </div>
+      <div class="foodWarn" v-if="foodWarn">エサを買ってください</div>
+      <div class="phraseBox" v-if="phraseOpen">{{ todaysPhrase }}</div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="hint">
+      <span class="full">
+        ドラッグで視点回転 ・ ホイール / ピンチでズーム ・
+        家具や部屋のリセットは ☰ メニューから ・ ゲームへ戻るのはヘッダーの🎮ボタンから<br>
+        ゲームの「🏠 マイルーム」ボタンから開くと、獲得した猫が自動で転送されてきます
+      </span>
+      <span class="short">
+        指1本で視点回転 ・ ピンチでズーム ・ 家具は☰メニューから
+      </span>
+    </div>
+  </footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.4.21/vue.global.prod.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="js/cat-shared.js"></script>
+<script src="js/room-engine.js"></script>
+<script>
+'use strict';
+/* マイルームページ(Vue層)：
+   - ヘッダー(統計・ハンバーガーメニュー・ショップ)/フッターを reactive に管理
+   - エンジン(createRoomEngine)とはフックで接続
+   - コイン・エサ・特点・家具・獲得猫はすべてサーバAPIが正。ここでは表示と、
+     アクション実行後にサーバから返る最新値でhudを更新するだけに留める */
+const { createApp, reactive, ref, onMounted } = Vue;
+
+// モバイルのアドレスバー出し引きで100vhが実表示領域とズレる問題への対策。
+// window.innerHeight（アドレスバー分を除いた実際の表示高さ）を都度 --vh として
+// CSS変数に反映し、#appの高さの最終的な基準にする（フッターが画面外に隠れるのを防ぐ）。
+function setVhVar(){
+  // visualViewport は、アドレスバー等ブラウザUIぶんを除いた「本当に見えている高さ」を
+  // 返すため window.innerHeight より正確（対応環境ではこちらを優先）。
+  const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+  document.documentElement.style.setProperty('--vh', `${h*0.01}px`);
+}
+setVhVar();
+addEventListener('resize', setVhVar);
+addEventListener('orientationchange', setVhVar);
+if(window.visualViewport) window.visualViewport.addEventListener('resize', setVhVar);
+
+async function api(path, body, method='POST'){
+  const res = await fetch(path, {
+    method,
+    headers: {'Content-Type':'application/json'},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(()=>({}));
+  if(!res.ok){ const err = new Error(data.error || `${method} ${path} -> ${res.status}`); err.data = data; throw err; }
+  return data;
+}
+
+// 「今日のことば」：JST日付でシード（同じ日は同じ言葉になる）
+const PHRASES = [
+  'にんげんは　いつも　いそがしそうだにゃ。',
+  'ひなたぼっこは　せかい一の　しごとにゃ。',
+  'ごはんを　まっている　じかんが　いちばん　すき。',
+  'まどのそとの　とりを　みてると　じかんを　わすれる。',
+  'ちょっとだけ　なでてくれたら　うれしいにゃ。',
+  'きょうも　げんきに　ねむります。',
+  'あそんでくれて　ありがとにゃ。',
+  'おなかが　すいたら　すぐいってね。',
+  'ソファーの　すみっこが　いちばん　おちつくにゃ。',
+  'きみと　いっしょに　いられて　しあわせにゃ。',
+];
+function todaysPhraseText(){
+  const jstDate = new Intl.DateTimeFormat('sv-SE', {timeZone:'Asia/Tokyo'}).format(new Date());
+  let h = 0; for(let i=0;i<jstDate.length;i++) h = (h*31 + jstDate.charCodeAt(i)) >>> 0;
+  return PHRASES[h % PHRASES.length];
+}
+
+createApp({
+  setup(){
+    const hud = reactive({count:0, points:0, coins:0, food:0});
+    const msg = reactive({text:'', show:false});
+    const menuOpen = ref(false);
+    const shopOpen = ref(false);
+    const hasOpener = ref(!!(window.opener && !window.opener.closed));
+    const videoOpen = ref(false);
+    const catVideo = ref(null);
+    const currentVideoUrl = ref('');
+    const foodWarn = ref(false);
+    const phraseOpen = ref(false);
+    const helpOpen = ref(false);
+    const todaysPhrase = ref(todaysPhraseText());
+    const owned = reactive({tower:false, sofa:false, cushion:false, house:false});
+    // 価格はコイン。サーバ(server.js FURNITURE_PRICES)と一致させること
+    const shop = [
+      {key:'tower',   icon:'🐾', label:'猫タワー',   price:5},
+      {key:'sofa',    icon:'🛋', label:'ソファー',   price:5},
+      {key:'cushion', icon:'🔴', label:'クッション', price:3},
+      {key:'house',   icon:'🏡', label:'猫小屋',     price:5},
+    ];
+    let engineRef = ref(null), userId = null, msgTimer = null;
+    let currentCat = null;   // クリックされた猫のTHREEオブジェクト（非リアクティブに保持）
+    let currentCatName = null;   // クリックされた猫の色名（エサやり動画の選択に使う）
+    const catVideoCache = {};   // "kind:猫の色名" → 動画URL一覧（一度取得したらキャッシュして使い回す）
+
+    function showMsg(text){
+      msg.text = text; msg.show = true;
+      clearTimeout(msgTimer);
+      msgTimer = setTimeout(()=>msg.show=false, 2000);
+    }
+
+    async function getCatVideoUrls(catName, kind){
+      const key = `${kind}:${catName}`;
+      if(catVideoCache[key]) return catVideoCache[key];
+      try{
+        const r = await api(`/api/cat-videos/${kind}/${encodeURIComponent(catName)}`, null, 'GET');
+        catVideoCache[key] = r.urls || [];
+      }catch(e){ catVideoCache[key] = []; }
+      return catVideoCache[key];
+    }
+    function playVideoUrl(url){
+      currentVideoUrl.value = url;
+      Vue.nextTick(()=>{
+        const el = catVideo.value;
+        if(el){ el.load(); el.currentTime = 0; el.play().catch(()=>{}); }
+      });
+    }
+    async function playCatVideo(catObj, catName){
+      currentCat = catObj;
+      currentCatName = catName;
+      foodWarn.value = false;
+      phraseOpen.value = false;
+      const urls = await getCatVideoUrls(catName, 'action');
+      if(urls.length === 0) return;   // 動画が用意されていない猫はポップアップを開かない
+      videoOpen.value = true;
+      playVideoUrl(urls[Math.floor(Math.random()*urls.length)]);
+    }
+    function closeVideo(){
+      const el = catVideo.value;
+      if(el) el.pause();
+      videoOpen.value = false;
+      foodWarn.value = false;
+      phraseOpen.value = false;
+    }
+    function togglePhrase(){
+      todaysPhrase.value = todaysPhraseText();
+      phraseOpen.value = !phraseOpen.value;
+    }
+
+    // ---- ポップアップのアクション ----
+    async function doFeed(){
+      if(hud.food <= 0){ foodWarn.value = true; return; }
+      foodWarn.value = false;
+      try{
+        const r = await api('/api/food/use', {userId});
+        hud.food = r.food;
+        engineRef.value && engineRef.value.feedCat(currentCat);
+        showMsg('🐟 エサをあげました');
+        const urls = await getCatVideoUrls(currentCatName, 'feeding');
+        if(urls.length > 0) playVideoUrl(urls[Math.floor(Math.random()*urls.length)]);
+        else closeVideo();   // エサやり動画が用意されていない猫はポップアップを閉じる
+      }catch(e){ foodWarn.value = true; }
+    }
+    function doPlayRoom(){
+      const ok = engineRef.value && engineRef.value.playWithFurniture(currentCat);
+      closeVideo();
+      showMsg(ok ? '🧶 あそんでいます…' : 'あそべる家具がありません（お買い物から購入できます）');
+    }
+    function doAdventure(){
+      engineRef.value && engineRef.value.startAdventure(currentCat);
+      closeVideo();
+      showMsg('🌿 冒険にでかけました');
+    }
+
+    // ---- メニューのアクション ----
+    async function buyFurniture(key){
+      if(owned[key]) return;
+      try{
+        const r = await api('/api/furniture', {userId, item:key});
+        hud.coins = r.coins;
+        engineRef.value && engineRef.value.purchase(key);
+        owned[key] = true;
+      }catch(e){
+        showMsg(e.data?.error==='insufficient coins' ? 'コインが足りません' : '購入できませんでした');
+      }
+    }
+    async function buyFood(){
+      try{
+        const r = await api('/api/food/buy', {userId, qty:1});
+        hud.coins = r.coins; hud.food = r.food;
+        showMsg('🐟 魚フレークを買いました');
+      }catch(e){ showMsg('コインが足りません'); }
+    }
+    async function buyCoins(){
+      try{
+        const r = await api('/api/coins/buy', {userId});
+        hud.coins = r.coins;
+        showMsg('💰 コインを購入しました（+5）');
+      }catch(e){ showMsg('購入できませんでした'); }
+    }
+    async function convertPoints(){
+      try{
+        const r = await api('/api/points/convert', {userId});
+        hud.coins = r.coins; hud.points = r.points;
+        showMsg(`✨ とくてん${r.gained*10}点を${r.gained}コインに変換しました`);
+      }catch(e){ showMsg('とくてんが10点たまっていません'); }
+    }
+    async function doResetFurniture(){
+      if(!confirm('設置した家具をすべて撤去します。コインは返却されません。よろしいですか？')) return;
+      engineRef.value && engineRef.value.resetFurniture();
+      for(const k of Object.keys(owned)) owned[k] = false;
+      if(userId) api(`/api/furniture/${userId}`, null, 'DELETE').catch(()=>{});
+    }
+    async function doResetCats(){
+      if(!confirm('部屋の猫をすべてクリアします。よろしいですか？')) return;
+      engineRef.value && engineRef.value.resetCats();
+      if(userId) api(`/api/cats/${userId}`, null, 'DELETE').catch(()=>{});
+    }
+    function goHome(){ location.href = '/'; }
+
+    function backToGame(){
+      try{ if(window.opener && !window.opener.closed) window.opener.focus(); }catch(e){}
+      let w = null;
+      try{ w = window.open('', 'nekoGame'); }catch(e){}
+      if(w){
+        let stray = false;
+        try{ stray = (w.location.href === 'about:blank'); }catch(e){ /* ゲーム本体 */ }
+        if(stray){ try{ w.close(); }catch(e){} showMsg('ゲーム画面が見つかりません'); }
+        else{ try{ w.focus(); }catch(e){} }
+      }
+    }
+
+    onMounted(async ()=>{
+      const engine = createRoomEngine({
+        showMsg,
+        onHud(h){ Object.assign(hud, h); },
+        onCatClick(catObj, catName){ playCatVideo(catObj, catName); },
+      });
+      engineRef.value = engine;
+
+      // サーバから 家具→獲得猫→コイン/とくてん/エサ の順に復元し、以降は新着をポーリング
+      try{
+        // ?newuser を付けて開くと、このブラウザのユーザーIDを破棄して新規発行する。
+        // 同じブラウザで複数ユーザーの動作を確認したいときの開発用ショートカット
+        // （本来は別ブラウザ/シークレットウィンドウ = 別ストレージで試すのが確実）。
+        if(new URLSearchParams(location.search).has('newuser'))
+          localStorage.removeItem('nekoUserId');
+        userId = localStorage.getItem('nekoUserId') || null;
+        const r = await api('/api/user', {userId});
+        userId = r.userId;
+        localStorage.setItem('nekoUserId', userId);
+        hud.coins = r.user.coins; hud.food = r.user.food; hud.points = r.user.points;
+        for(const key of Object.keys(owned)){
+          if(r.user.furniture && r.user.furniture[key]){
+            engine.purchase(key, {quiet:true});
+            owned[key] = true;
+          }
+        }
+        const fetchCats = async ()=>{
+          const cs = await api(`/api/cats/${userId}`, null, 'GET');
+          for(const entry of cs.cats) engine.receiveEntry(entry, false);
+        };
+        await fetchCats();
+        // 猫の到着だけでなくコイン/とくてん/エサ(ゲーム側での変化)も定期的に同期する
+        setInterval(async ()=>{
+          try{
+            await fetchCats();
+            const u = await api(`/api/user/${userId}`, null, 'GET');
+            hud.coins = u.user.coins; hud.food = u.user.food; hud.points = u.user.points;
+          }catch(e){}
+        }, 2500);
+      }catch(e){
+        console.warn('APIサーバ未接続（postMessage受信のみで動作）', e.message);
+      }
+    });
+
+    return { hud, msg, menuOpen, shopOpen, hasOpener, owned, shop,
+             buyFurniture, buyFood, buyCoins, convertPoints,
+             doResetFurniture, doResetCats, goHome, backToGame,
+             videoOpen, catVideo, currentVideoUrl, closeVideo,
+             foodWarn, phraseOpen, todaysPhrase, togglePhrase,
+             doFeed, doPlayRoom, doAdventure, helpOpen };
+  }
+}).mount('#app');
+</script></script>
+</body>
+</html>

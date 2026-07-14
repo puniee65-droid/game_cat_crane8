@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="color-scheme" content="only dark">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3Dねこメーカー</title>
+<style>
+  :root{
+    color-scheme: only dark;
+    --bg:#16242e; --panel:#1f313d; --panel2:#243947; --line:rgba(255,255,255,.12);
+    --cream:#fdf6ec; --gold:#ffc94d; --pink:#ff8fab; --mint:#7fd4c1; --ink:#0c2a33;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--cream);min-height:100vh;
+       font-family:"Hiragino Maru Gothic ProN","BIZ UDGothic","Yu Gothic",system-ui,sans-serif}
+  header{display:flex;align-items:baseline;gap:14px;padding:18px 24px;border-bottom:2px solid var(--line)}
+  header h1{font-size:clamp(18px,3vw,26px);color:var(--gold);letter-spacing:.05em}
+  header p{font-size:13px;opacity:.7}
+
+  main{display:grid;grid-template-columns:minmax(300px,420px) 1fr;gap:18px;padding:18px 24px;max-width:1280px;margin:0 auto}
+  @media (max-width:860px){ main{grid-template-columns:1fr} }
+  section{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px}
+  h2{font-size:14px;color:var(--gold);letter-spacing:.12em;margin-bottom:12px}
+
+  /* 画像入力 */
+  #dropzone{border:2px dashed rgba(255,201,77,.5);border-radius:12px;min-height:180px;
+            display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;
+            cursor:pointer;text-align:center;padding:14px;transition:background .15s}
+  #dropzone.over{background:rgba(255,201,77,.12)}
+  #dropzone.small{min-height:0;padding:8px}
+  #dropzone p{font-size:13px;opacity:.8}
+  #srcCanvas{max-width:100%;border-radius:10px;display:none;cursor:crosshair;margin-top:10px}
+  #pickHint{display:none;font-size:12px;color:var(--mint);margin-top:6px}
+
+  /* パレット */
+  .swatches{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+  .sw{display:flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--line);
+      border-radius:10px;padding:6px 8px}
+  .sw label{flex:1;font-size:12px}
+  .sw input[type=color]{width:34px;height:28px;border:none;background:none;cursor:pointer;padding:0}
+  .sw button{border:1px solid var(--line);background:transparent;color:var(--cream);
+             border-radius:8px;font-size:12px;padding:3px 8px;cursor:pointer}
+  .sw button.active{background:var(--mint);color:var(--ink);border-color:var(--mint)}
+  #reExtract{margin-top:10px;width:100%}
+
+  /* プレビュー＋スライダー */
+  #previewWrap{position:relative;background:radial-gradient(circle at 50% 30%,#2a4152,var(--bg) 75%);
+               border-radius:12px;overflow:hidden;height:340px}
+  #previewWrap canvas{display:block}
+  .sliders{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px 18px;margin-top:14px}
+  .sl label{display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px}
+  .sl label b{color:var(--gold);font-variant-numeric:tabular-nums}
+  .sl input{width:100%;accent-color:var(--pink)}
+
+  /* 書き出し */
+  #exportRow{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:14px}
+  #nameInput{background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+             color:var(--cream);padding:9px 12px;font-size:14px;width:160px}
+  .btn{border:none;border-radius:12px;padding:10px 18px;font-weight:700;font-size:14px;cursor:pointer;user-select:none}
+  .btn.gold{background:var(--gold);color:#5a3d00;box-shadow:0 4px 0 #b98a1c}
+  .btn.mint{background:var(--mint);color:var(--ink);box-shadow:0 4px 0 #3e9a86}
+  .btn.ghost{background:transparent;color:var(--cream);border:1px solid var(--line);box-shadow:none}
+  .btn:active{transform:translateY(3px);box-shadow:none}
+  #note{font-size:12px;opacity:.7;margin-top:10px;line-height:1.7}
+  #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--gold);color:#5a3d00;
+         font-weight:700;padding:10px 20px;border-radius:12px;opacity:0;transition:opacity .25s;pointer-events:none}
+  #toast.show{opacity:1}
+</style>
+</head>
+<body>
+<header>
+  <h1>🐱 3Dねこメーカー</h1>
+  <p>猫の写真からクレーンゲーム用の3Dモデルを作成</p>
+</header>
+
+<main>
+  <!-- 左：画像とパレット -->
+  <section>
+    <h2>STEP 1 ─ 写真を入れる</h2>
+    <div id="dropzone">
+      <p>📷 ここに猫の画像をドロップ<br>またはクリックして選択</p>
+      <p style="font-size:11px;opacity:.6">背景が透過/単色だと色抽出の精度が上がります</p>
+    </div>
+    <input type="file" id="fileInput" accept="image/*" hidden>
+    <canvas id="srcCanvas"></canvas>
+    <p id="pickHint">🎯 画像をクリックして色を採取してください</p>
+
+    <h2 style="margin-top:18px">STEP 2 ─ 色をととのえる</h2>
+    <p style="font-size:12px;opacity:.75;line-height:1.6">
+      写真から自動抽出されます。「採取」→画像クリックでスポイト修正、カラーチップで直接変更もできます。</p>
+    <div class="swatches" id="swatches"></div>
+    <button class="btn ghost" id="reExtract">🔄 写真から色を再抽出</button>
+  </section>
+
+  <!-- 右：3Dプレビューと調整 -->
+  <section>
+    <h2>STEP 3 ─ 体型をととのえる（3Dプレビュー）</h2>
+    <div id="previewWrap"></div>
+    <div class="sliders" id="sliders"></div>
+
+    <h2 style="margin-top:18px">STEP 4 ─ 書き出してゲームへ</h2>
+    <div id="exportRow">
+      <input id="nameInput" placeholder="なまえ（例：たま）" maxlength="12">
+      <button class="btn gold" id="downloadBtn">⬇ ねこファイルを保存</button>
+      <button class="btn mint" id="copyBtn">📋 JSONをコピー</button>
+      <button class="btn ghost" id="resetBtn">リセット</button>
+    </div>
+    <p id="note">
+      保存される <b>.neko.json</b> をクレーンゲーム側の「📥 猫を読み込む」ボタンから選ぶと、
+      この猫がフィールドに入場し、以降の補充にも登場します。</p>
+  </section>
+</main>
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+'use strict';
+/* ============================================================
+   3Dねこメーカー
+   写真 → 色抽出(k-means) → パラメトリック猫モデル → JSON書き出し
+   book: フォーマットはゲーム側と共通の 'neko-crane-cat'
+   ============================================================ */
+
+// ---------- 共通フォーマット（ゲーム側 neko_crane_game.html と同一） ----------
+const DEFAULT_DEF = {
+  format:'neko-crane-cat', version:1, name:'子ねこ',
+  colors:{ fur:'#f3f1ea', patch:'#b59c82', stripe:'#8a715c',
+           earIn:'#c9a290', iris:'#6d5c3c', nose:'#b97f84' },
+  props:{ headSize:1, legLen:1, earSize:1, eyeSize:1,
+          fluff:1, patchAmount:1, bodyLen:1, scale:1 },
+};
+let def = JSON.parse(JSON.stringify(DEFAULT_DEF));
+
+// ---------- パラメトリック猫ビルダー（ゲーム側と同一実装） ----------
+function buildCatModel(def){
+  const C = def.colors, P = def.props;
+  const std = (hex,rough=.95)=>new THREE.MeshStandardMaterial({color:new THREE.Color(hex), roughness:rough});
+  const fur=std(C.fur), patchM=std(C.patch), stripeM=std(C.stripe), earInM=std(C.earIn,.9);
+  const cream = std(C.fur); cream.color.multiplyScalar(.93);
+  const irisM = std(C.iris,.35);
+  const rimM  = std('#17100a',.5);
+  const pupil = std('#050403',.25);
+  const shine = new THREE.MeshBasicMaterial({color:0xffffff});
+  const noseM = std(C.nose,.6);
+
+  const lift = .42*(P.legLen-1);          // 脚が伸びた分だけ胴体を持ち上げる
+  const bl = P.bodyLen;
+  const showPatch = P.patchAmount > .05;
+  const ps = Math.min(1.5, Math.max(.25, P.patchAmount));   // 模様の面積係数
+
+  const g = new THREE.Group();
+
+  // 胴体
+  const body = new THREE.Mesh(new THREE.SphereGeometry(.5,20,16), fur);
+  body.scale.set(1.3*bl,.82,.9); body.position.y=.46+lift; body.castShadow=true; g.add(body);
+  const hip = new THREE.Mesh(new THREE.SphereGeometry(.22,10,8), cream);
+  hip.scale.set(1.3,.5,1); hip.position.set(-.42*bl,.72+lift,.1); g.add(hip);
+  const hip2 = new THREE.Mesh(new THREE.SphereGeometry(.15,10,8), patchM);
+  hip2.scale.set(1.2*ps,.4,.9*ps); hip2.position.set(-.5*bl,.74+lift,-.14);
+  hip2.visible = showPatch; g.add(hip2);
+  // 胸のふわふわ
+  const chest = new THREE.Mesh(new THREE.SphereGeometry(.32,14,12), fur);
+  chest.scale.set(.9*P.fluff,1.05*P.fluff,P.fluff); chest.position.set(.48*bl,.4+lift,0);
+  chest.castShadow=true; g.add(chest);
+  const ruff = new THREE.Mesh(new THREE.SphereGeometry(.22,10,8), fur);
+  ruff.scale.setScalar(P.fluff); ruff.position.set(.56*bl,.62+lift,0); g.add(ruff);
+
+  // 頭
+  const head = new THREE.Group();
+  head.position.set(.66*bl,.95+lift,0); head.scale.setScalar(P.headSize); g.add(head);
+  const skull = new THREE.Mesh(new THREE.SphereGeometry(.4,20,16), fur);
+  skull.scale.set(.95,.9,1); skull.castShadow=true; head.add(skull);
+  // 頭頂〜側頭部のパッチ
+  const capTop = new THREE.Mesh(new THREE.SphereGeometry(.3,12,10), patchM);
+  capTop.scale.set(.95*ps,.6,1.15*ps); capTop.position.set(-.05,.24,0);
+  capTop.visible = showPatch; head.add(capTop);
+  for(const s of [-1,1]){
+    const side = new THREE.Mesh(new THREE.SphereGeometry(.24,12,10), patchM);
+    side.scale.set(.9*ps,.85,.6*ps); side.position.set(.05,.1,s*.3);
+    side.visible = showPatch; head.add(side);
+    const cheekTan = new THREE.Mesh(new THREE.SphereGeometry(.14,10,8), patchM);
+    cheekTan.scale.set(.7*ps,.9,.6*ps); cheekTan.position.set(.24,-.02,s*.3);
+    cheekTan.visible = showPatch; head.add(cheekTan);
+  }
+  // 額のブレーズ
+  const blaze = new THREE.Mesh(new THREE.SphereGeometry(.17,10,10), fur);
+  blaze.scale.set(1.05,1.5,.55); blaze.position.set(.24,.18,0); head.add(blaze);
+  // 額の縞
+  for(let i=-1;i<=1;i++){
+    const st = new THREE.Mesh(new THREE.BoxGeometry(.2,.16,.035), stripeM);
+    st.position.set(.1,.34,i*.14);
+    st.rotation.x = i*.35; st.rotation.z = -.5;
+    st.visible = showPatch; head.add(st);
+  }
+  // 耳
+  for(const s of [-1,1]){
+    const ear = new THREE.Mesh(new THREE.ConeGeometry(.15,.3,4), patchM);
+    ear.position.set(-.06,.38,s*.24); ear.rotation.set(s*.3,.45,-.1);
+    ear.scale.setScalar(P.earSize); ear.castShadow=true; head.add(ear);
+    const inner = new THREE.Mesh(new THREE.ConeGeometry(.085,.2,4), earInM);
+    inner.position.set(-.02,.37,s*.235); inner.rotation.set(s*.3,.45,-.1);
+    inner.scale.setScalar(P.earSize); head.add(inner);
+  }
+  // 目（縁→虹彩→瞳孔→ハイライト）
+  const eyes = [];
+  for(const s of [-1,1]){
+    const eye = new THREE.Group();
+    eyes.push(eye);
+    eye.position.set(.31,.05,s*.155); eye.rotation.y = -s*.32;
+    eye.scale.setScalar(P.eyeSize); head.add(eye);
+    const rim = new THREE.Mesh(new THREE.SphereGeometry(.096,12,10), rimM);
+    rim.scale.set(.5,1,1); eye.add(rim);
+    const ir = new THREE.Mesh(new THREE.SphereGeometry(.08,12,10), irisM);
+    ir.scale.set(.5,1,1); ir.position.x=.018; eye.add(ir);
+    const pu = new THREE.Mesh(new THREE.SphereGeometry(.048,10,8), pupil);
+    pu.scale.set(.5,1,1); pu.position.x=.042; eye.add(pu);
+    const hi = new THREE.Mesh(new THREE.SphereGeometry(.02,6,6), shine);
+    hi.position.set(.075,.035,.02); eye.add(hi);
+  }
+  // マズル・鼻・口
+  for(const s of [-1,1]){
+    const mz = new THREE.Mesh(new THREE.SphereGeometry(.115,12,10), fur);
+    mz.scale.set(.8,.75,1); mz.position.set(.33,-.13,s*.085); head.add(mz);
+  }
+  const chin = new THREE.Mesh(new THREE.SphereGeometry(.09,10,8), fur);
+  chin.position.set(.32,-.22,0); head.add(chin);
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(.05,.06,3), noseM);
+  nose.position.set(.41,-.06,0);
+  nose.rotation.set(0,0,Math.PI); nose.rotation.y = Math.PI/2;
+  head.add(nose);
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(.012,.06,.012), rimM);
+  lip.position.set(.42,-.13,0); head.add(lip);
+  // 舌（普段は隠しておき、舐めるときだけ出す）
+  const tongue = new THREE.Mesh(new THREE.SphereGeometry(.055,10,8),
+    new THREE.MeshStandardMaterial({color:0xe58a92, roughness:.55}));
+  tongue.scale.set(.001,.001,.001); tongue.visible = false;
+  tongue.position.set(.40,-.18,0);
+  head.add(tongue);
+  // ヒゲ（付け根を口元に置き、根元から外向きに生やす）
+  for(const s of [-1,1]) for(let i=0;i<3;i++){
+    const wgGeo = new THREE.CylinderGeometry(.004,.004,.34,4);
+    wgGeo.translate(0,.17,0);                          // 根元基準：+y方向にだけ伸びる
+    const wg = new THREE.Mesh(wgGeo,
+               new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:.75}));
+    wg.rotation.z = -Math.PI/2;                        // 軸を前方(+x)へ
+    wg.rotation.y = -s*(.55+.12*i);                    // 前方から外側(s側)へ振り分け
+    wg.rotation.x = s*(i-1)*.13;                       // 上・中・下の扇形
+    wg.position.set(.33,-.09+(i-1)*.03, s*.11);        // 付け根はマズルの横
+    head.add(wg);
+  }
+  // 脚
+  const legLen = .42*P.legLen;
+  const legGeo = new THREE.CylinderGeometry(.085,.075,legLen,10);
+  legGeo.translate(0,-legLen/2,0);
+  const legs = [];
+  const legPos = [[.38*bl,legLen,.2],[.38*bl,legLen,-.2],[-.36*bl,legLen,.2],[-.36*bl,legLen,-.2]];
+  for(const [x,y,z] of legPos){
+    const leg = new THREE.Mesh(legGeo, fur);
+    leg.position.set(x,y,z); leg.castShadow=true;
+    g.add(leg); legs.push(leg);
+    const paw = new THREE.Mesh(new THREE.SphereGeometry(.095,8,6), fur);
+    paw.scale.set(1.15,.8,1); paw.position.y = -legLen+.02; leg.add(paw);
+  }
+  // しっぽ（先端にパッチ色）
+  const tailRoot = new THREE.Group();
+  tailRoot.position.set(-.6*bl,.64+lift,0); g.add(tailRoot);
+  const tailSegs = [];
+  let parent = tailRoot;
+  for(let i=0;i<4;i++){
+    const seg = new THREE.Group();
+    const s = new THREE.Mesh(new THREE.SphereGeometry(.09-.012*i,8,6),
+                             (i>=2 && showPatch)?patchM:fur);
+    s.position.x = -.13; seg.add(s);
+    seg.position.x = i===0?0:-.16;
+    parent.add(seg); parent = seg;
+    tailSegs.push(seg);
+  }
+  tailRoot.rotation.z = .85;
+
+  return {group:g, legs, head, tailRoot, tailSegs, eyes, tongue};
+}
+
+// ---------- 3Dプレビュー（ターンテーブル） ----------
+const wrap = document.getElementById('previewWrap');
+const pScene = new THREE.Scene();
+const pCam = new THREE.PerspectiveCamera(42, 1, .1, 50);
+pCam.position.set(0, 1.6, 4.2); pCam.lookAt(0,.8,0);
+const pRen = new THREE.WebGLRenderer({antialias:true, alpha:true});
+pRen.setPixelRatio(Math.min(devicePixelRatio,2));
+pRen.shadowMap.enabled = true;
+wrap.appendChild(pRen.domElement);
+function sizePreview(){
+  pRen.setSize(wrap.clientWidth, wrap.clientHeight);
+  pCam.aspect = wrap.clientWidth/wrap.clientHeight;
+  pCam.updateProjectionMatrix();
+}
+sizePreview(); addEventListener('resize', sizePreview);
+
+pScene.add(new THREE.AmbientLight(0xfff2e0,.6));
+const pSun = new THREE.DirectionalLight(0xffffff,.9);
+pSun.position.set(3,6,4); pSun.castShadow=true; pScene.add(pSun);
+const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(1.5,1.7,.25,32),
+  new THREE.MeshStandardMaterial({color:0xe3556f, roughness:.5}));
+pedestal.position.y=-.13; pedestal.receiveShadow=true; pScene.add(pedestal);
+
+let catGroup = null, tailAnim = null;
+function rebuild(){
+  if(catGroup){
+    pScene.remove(catGroup);
+    catGroup.traverse(o=>{ if(o.geometry)o.geometry.dispose(); if(o.material)o.material.dispose(); });
+  }
+  const m = buildCatModel(def);
+  catGroup = m.group;
+  catGroup.scale.setScalar(def.props.scale);
+  pScene.add(catGroup);
+  tailAnim = m;
+}
+rebuild();
+
+let t0 = performance.now();
+(function loop(now){
+  requestAnimationFrame(loop);
+  const t = (now-t0)/1000;
+  if(catGroup){
+    catGroup.rotation.y = t*.6;                       // ターンテーブル
+    if(tailAnim){                                     // しっぽだけ生きてる感
+      tailAnim.tailRoot.rotation.y = Math.sin(t*2)*.3;
+      tailAnim.tailSegs.forEach((s,i)=>s.rotation.y = Math.sin(t*2-i*.7)*.3);
+    }
+  }
+  pRen.render(pScene, pCam);
+})(t0);
+
+// ---------- 色UI ----------
+const COLOR_SLOTS = [
+  ['fur',   'ベースの毛色'],
+  ['patch', '模様の色'],
+  ['stripe','縞の濃色'],
+  ['earIn', '耳の内側'],
+  ['iris',  '目（虹彩）'],
+  ['nose',  '鼻'],
+];
+let pickSlot = null;
+const swWrap = document.getElementById('swatches');
+for(const [key,label] of COLOR_SLOTS){
+  const row = document.createElement('div');
+  row.className = 'sw';
+  row.innerHTML = `<input type="color" data-key="${key}" value="${def.colors[key]}">
+                   <label>${label}</label>
+                   <button data-pick="${key}">採取</button>`;
+  swWrap.appendChild(row);
+}
+swWrap.addEventListener('input', e=>{
+  const k = e.target.dataset.key;
+  if(!k) return;
+  def.colors[k] = e.target.value;
+  rebuild();
+});
+swWrap.addEventListener('click', e=>{
+  const k = e.target.dataset.pick;
+  if(!k) return;
+  pickSlot = (pickSlot===k)? null : k;
+  document.querySelectorAll('[data-pick]').forEach(b=>b.classList.toggle('active', b.dataset.pick===pickSlot));
+  document.getElementById('pickHint').style.display = pickSlot? 'block':'none';
+});
+function syncSwatches(){
+  document.querySelectorAll('input[type=color][data-key]').forEach(i=>{
+    i.value = def.colors[i.dataset.key];
+  });
+}
+
+// ---------- スライダーUI ----------
+const PROP_SLOTS = [
+  ['headSize',   '頭の大きさ',   .7, 1.5],
+  ['bodyLen',    '胴の長さ',     .8, 1.4],
+  ['legLen',     '脚の長さ',     .6, 1.6],
+  ['earSize',    '耳の大きさ',   .6, 1.6],
+  ['eyeSize',    '目の大きさ',   .6, 1.5],
+  ['fluff',      'ふわふわ度',   .5, 1.6],
+  ['patchAmount','模様の量',      0, 1.5],
+  ['scale',      '全体サイズ',   .6, 1.3],
+];
+const slWrap = document.getElementById('sliders');
+for(const [key,label,min,max] of PROP_SLOTS){
+  const d = document.createElement('div');
+  d.className='sl';
+  d.innerHTML = `<label>${label}<b id="v_${key}">${def.props[key].toFixed(2)}</b></label>
+    <input type="range" data-key="${key}" min="${min}" max="${max}" step="0.01" value="${def.props[key]}">`;
+  slWrap.appendChild(d);
+}
+slWrap.addEventListener('input', e=>{
+  const k = e.target.dataset.key;
+  if(!k) return;
+  def.props[k] = parseFloat(e.target.value);
+  document.getElementById('v_'+k).textContent = def.props[k].toFixed(2);
+  rebuild();
+});
+function syncSliders(){
+  document.querySelectorAll('input[type=range][data-key]').forEach(i=>{
+    i.value = def.props[i.dataset.key];
+    document.getElementById('v_'+i.dataset.key).textContent = def.props[i.dataset.key].toFixed(2);
+  });
+}
+
+// ---------- 画像読み込みと色抽出 ----------
+const dz = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+const srcCanvas = document.getElementById('srcCanvas');
+const ctx = srcCanvas.getContext('2d', {willReadFrequently:true});
+let hasImage = false;
+
+dz.addEventListener('click', ()=>fileInput.click());
+dz.addEventListener('dragover', e=>{e.preventDefault(); dz.classList.add('over');});
+dz.addEventListener('dragleave', ()=>dz.classList.remove('over'));
+dz.addEventListener('drop', e=>{
+  e.preventDefault(); dz.classList.remove('over');
+  const f = e.dataTransfer.files[0];
+  if(f) loadImageFile(f);
+});
+fileInput.addEventListener('change', e=>{
+  if(e.target.files[0]) loadImageFile(e.target.files[0]);
+  e.target.value='';
+});
+
+function loadImageFile(file){
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = ()=>{
+    URL.revokeObjectURL(url);
+    const maxW = 420;
+    const sc = Math.min(1, maxW/img.width);
+    srcCanvas.width = Math.round(img.width*sc);
+    srcCanvas.height = Math.round(img.height*sc);
+    ctx.clearRect(0,0,srcCanvas.width,srcCanvas.height);
+    ctx.drawImage(img, 0,0, srcCanvas.width, srcCanvas.height);
+    srcCanvas.style.display='block';
+    dz.classList.add('small');
+    hasImage = true;
+    extractPalette();
+  };
+  img.onerror = ()=>toast('画像を読み込めませんでした');
+  img.src = url;
+}
+
+// スポイト：クリック位置の3x3平均色を採取
+srcCanvas.addEventListener('click', e=>{
+  if(!pickSlot || !hasImage) return;
+  const r = srcCanvas.getBoundingClientRect();
+  const x = Math.round((e.clientX-r.left) * srcCanvas.width/r.width);
+  const y = Math.round((e.clientY-r.top ) * srcCanvas.height/r.height);
+  const d = ctx.getImageData(Math.max(0,x-1), Math.max(0,y-1), 3, 3).data;
+  let rr=0,gg=0,bb=0,n=0;
+  for(let i=0;i<d.length;i+=4){ if(d[i+3]>60){rr+=d[i];gg+=d[i+1];bb+=d[i+2];n++;} }
+  if(!n) return;
+  const hex = '#'+[rr/n,gg/n,bb/n].map(v=>Math.round(v).toString(16).padStart(2,'0')).join('');
+  def.colors[pickSlot] = hex;
+  syncSwatches(); rebuild();
+  toast(`「${COLOR_SLOTS.find(c=>c[0]===pickSlot)[1]}」に ${hex} を設定`);
+  pickSlot = null;
+  document.querySelectorAll('[data-pick]').forEach(b=>b.classList.remove('active'));
+  document.getElementById('pickHint').style.display='none';
+});
+
+document.getElementById('reExtract').addEventListener('click', ()=>{
+  if(!hasImage){ toast('先に画像を読み込んでください'); return; }
+  extractPalette();
+});
+
+// --- k-means による自動パレット抽出 ---
+function extractPalette(){
+  const {width:w, height:h} = srcCanvas;
+  const data = ctx.getImageData(0,0,w,h).data;
+
+  // 背景判定：透過があればアルファ、なければ四隅の平均色との距離
+  let transparent = 0;
+  for(let i=3;i<data.length;i+=4*97) if(data[i]<128) transparent++;
+  const useAlpha = transparent > (data.length/(4*97))*0.02;
+  let bg = [255,255,255];
+  if(!useAlpha){
+    const corners = [[2,2],[w-3,2],[2,h-3],[w-3,h-3]];
+    let r=0,g=0,b=0;
+    for(const [cx,cy] of corners){
+      const i=(cy*w+cx)*4; r+=data[i];g+=data[i+1];b+=data[i+2];
+    }
+    bg = [r/4,g/4,b/4];
+  }
+  const dist = (a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1],a[2]-b[2]);
+
+  // 猫ピクセルを間引き収集（最大約15,000点）
+  const px = [];
+  const stride = Math.max(1, Math.floor(Math.sqrt(w*h/15000)));
+  for(let y=0;y<h;y+=stride) for(let x=0;x<w;x+=stride){
+    const i = (y*w+x)*4;
+    if(useAlpha){ if(data[i+3]<128) continue; }
+    else if(dist([data[i],data[i+1],data[i+2]], bg) < 55) continue;
+    px.push([data[i],data[i+1],data[i+2]]);
+  }
+  if(px.length < 50){ toast('猫の領域を検出できませんでした'); return; }
+
+  // k-means (k=5)：初期中心は等間隔サンプルで安定化
+  const k = 5;
+  let centers = [];
+  for(let i=0;i<k;i++) centers.push(px[Math.floor(px.length*(i+.5)/k)].slice());
+  const assign = new Array(px.length).fill(0);
+  for(let t=0;t<10;t++){
+    for(let i=0;i<px.length;i++){
+      let bd=1e9,bi=0;
+      for(let c=0;c<k;c++){
+        const d=dist(px[i],centers[c]);
+        if(d<bd){bd=d;bi=c;}
+      }
+      assign[i]=bi;
+    }
+    const sum = Array.from({length:k},()=>[0,0,0,0]);
+    for(let i=0;i<px.length;i++){
+      const s=sum[assign[i]], p=px[i];
+      s[0]+=p[0];s[1]+=p[1];s[2]+=p[2];s[3]++;
+    }
+    for(let c=0;c<k;c++) if(sum[c][3]>0)
+      centers[c]=[sum[c][0]/sum[c][3],sum[c][1]/sum[c][3],sum[c][2]/sum[c][3]];
+  }
+  const clusters = centers.map((c,i)=>({rgb:c, w:assign.filter(a=>a===i).length}))
+                          .filter(c=>c.w>0)
+                          .sort((a,b)=>b.w-a.w);
+
+  const toHex = c=>'#'+c.map(v=>Math.round(Math.max(0,Math.min(255,v))).toString(16).padStart(2,'0')).join('');
+  const darken = (c,f)=>c.map(v=>v*f);
+  const mix = (a,b,t)=>a.map((v,i)=>v*(1-t)+b[i]*t);
+  const lum = c=>.299*c[0]+.587*c[1]+.114*c[2];
+
+  // 割り当てヒューリスティック：
+  // fur=最大クラスタ / patch=furと十分離れた最大クラスタ / stripe=最暗クラスタ
+  const fur = clusters[0].rgb;
+  const patchC = clusters.find(c=>dist(c.rgb,fur)>55);
+  const patch = patchC ? patchC.rgb : darken(fur,.75);
+  const darkest = clusters.reduce((a,b)=>lum(a.rgb)<lum(b.rgb)?a:b).rgb;
+  const stripe = (dist(darkest,patch)>25 && lum(darkest)<lum(patch)) ? darkest : darken(patch,.72);
+
+  def.colors.fur    = toHex(fur);
+  def.colors.patch  = toHex(patch);
+  def.colors.stripe = toHex(stripe);
+  def.colors.earIn  = toHex(mix(patch,[224,160,150],.55));   // 模様色×ピンクの中間
+  // 目と鼻は写真からの自動特定が難しいのでデフォルト維持（スポイト推奨）
+  syncSwatches(); rebuild();
+  toast('写真から色を抽出しました（目と鼻はスポイトで採取推奨）');
+}
+
+// ---------- 書き出し ----------
+const nameInput = document.getElementById('nameInput');
+function currentJSON(){
+  def.name = nameInput.value.trim() || '新入りねこ';
+  return JSON.stringify(def, null, 2);
+}
+document.getElementById('downloadBtn').addEventListener('click', ()=>{
+  const blob = new Blob([currentJSON()], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${def.name}.neko.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast(`${def.name}.neko.json を保存しました`);
+});
+document.getElementById('copyBtn').addEventListener('click', async ()=>{
+  try{ await navigator.clipboard.writeText(currentJSON()); toast('JSONをコピーしました'); }
+  catch(e){ toast('コピーできませんでした'); }
+});
+document.getElementById('resetBtn').addEventListener('click', ()=>{
+  def = JSON.parse(JSON.stringify(DEFAULT_DEF));
+  nameInput.value='';
+  syncSwatches(); syncSliders(); rebuild();
+  toast('初期値に戻しました');
+});
+
+let toastTimer=null;
+function toast(t){
+  const el = document.getElementById('toast');
+  el.textContent = t; el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>el.classList.remove('show'), 2200);
+}
+</script>
+</body>
+</html>

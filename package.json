@@ -1,0 +1,9 @@
+{
+  "name": "neko-catcher",
+  "version": "1.0.0",
+  "private": true,
+  "description": "3Dねこクレーンゲーム + マイルーム（Vue.js + Three.js + 依存ゼロNode.jsサーバ）",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

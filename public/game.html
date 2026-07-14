@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="color-scheme" content="only dark">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>ねこキャッチャー 3D</title>
+<style>
+  :root{
+    color-scheme: only dark;
+    --ink:#3a2e2a; --cream:#fdf6ec; --pink:#ff8fab; --gold:#ffc94d;
+    --bar:#12202a; --line:rgba(255,201,77,.4);
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{width:100%;height:100%;overflow:hidden;background:#1b2a33;color:var(--cream);
+    font-family:"Hiragino Maru Gothic ProN","BIZ UDGothic","Yu Gothic",system-ui,sans-serif}
+  html{height:-webkit-fill-available}
+  #app{display:flex;flex-direction:column;
+       height:100vh; height:100dvh;
+       height:-webkit-fill-available;
+       height:calc(var(--vh, 1vh) * 100)}
+
+  /* ---------- ヘッダー ---------- */
+  header{flex:none;display:flex;justify-content:space-between;align-items:center;gap:10px;
+         padding:10px 16px;background:var(--bar);border-bottom:2px solid var(--line);z-index:10}
+  header h1{font-size:clamp(15px,2.6vw,21px);color:var(--gold);letter-spacing:.04em;
+            text-shadow:0 2px 0 rgba(0,0,0,.35)}
+  header h1 small{color:var(--cream);font-weight:400;font-size:.62em;margin-left:.5em}
+  .stats{display:flex;gap:16px;font-weight:700;font-size:clamp(13px,2.2vw,16px)}
+  .stats b{color:var(--gold);font-size:1.25em;margin-left:.3em;font-variant-numeric:tabular-nums}
+
+  /* ---------- メイン(3D) ---------- */
+  main{flex:1;position:relative;min-height:0}
+  #stage{position:absolute;inset:0}
+  #stage canvas{display:block}
+  .msg{position:absolute;top:20%;left:50%;transform:translateX(-50%) scale(.9);
+       font-size:clamp(22px,5vw,42px);font-weight:800;
+       text-shadow:0 3px 0 rgba(0,0,0,.4),0 0 24px rgba(255,201,77,.45);
+       opacity:0;transition:opacity .3s,transform .3s;pointer-events:none;z-index:20;white-space:nowrap}
+  .msg.show{opacity:1;transform:translateX(-50%) scale(1)}
+
+  /* ---------- フッター ---------- */
+  footer{flex:none;display:flex;justify-content:space-between;align-items:center;gap:14px;
+         padding:12px 18px calc(12px + env(safe-area-inset-bottom));
+         background:var(--bar);border-top:2px solid var(--line);z-index:10}
+  #dpad{display:grid;grid-template-columns:repeat(3,50px);grid-template-rows:repeat(3,50px);gap:5px}
+  .pbtn{border:2px solid rgba(255,255,255,.22);border-radius:12px;background:rgba(255,255,255,.06);
+        color:var(--cream);font-size:20px;font-weight:700;cursor:pointer;user-select:none;
+        box-shadow:0 4px 0 rgba(0,0,0,.35);transition:transform .05s}
+  .pbtn:active,.pbtn.on{transform:translateY(3px);box-shadow:0 1px 0 rgba(0,0,0,.35)}
+  #up{grid-area:1/2}#left{grid-area:2/1}#right{grid-area:2/3}#down{grid-area:3/2}
+  .hint{flex:1;font-size:11.5px;opacity:.6;line-height:1.7;text-align:center}
+  .side{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+  .rowBtns{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+  .btn{border:none;border-radius:12px;padding:8px 14px;font-weight:700;font-size:13px;
+       cursor:pointer;user-select:none;box-shadow:0 4px 0 rgba(0,0,0,.3)}
+  .btn:active{transform:translateY(3px);box-shadow:0 1px 0 rgba(0,0,0,.3)}
+  #roomBtn{background:#b8a1e8;color:#2e1a52}
+  #coinBtn{background:var(--gold);color:#5a3d00}
+  #drop{width:96px;height:96px;border-radius:50%;border:5px solid #d8455f;
+        background:radial-gradient(circle at 35% 30%,#ffb1c4,var(--pink) 60%,#e26a8a);
+        color:#5c1226;font-size:18px;font-weight:800;cursor:pointer;
+        box-shadow:0 6px 0 #a72e47,0 10px 18px rgba(0,0,0,.45);transition:transform .06s,box-shadow .06s;user-select:none}
+  #drop:active{transform:translateY(5px);box-shadow:0 2px 0 #a72e47}
+  #drop:disabled{filter:grayscale(.75);cursor:default}
+  @media (max-width:720px){ .hint{display:none} }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>🐈 ねこキャッチャー<small>3D CRANE GAME</small></h1>
+    <div class="stats">
+      <span>ステージ<b>{{ hud.stage }}</b></span>
+      <span>コイン<b>{{ hud.coins }}</b></span>
+      <span>ゲット<b>{{ hud.score }}</b></span>
+      <span>とくてん<b>{{ hud.points }}</b></span>
+    </div>
+  </header>
+
+  <main>
+    <div id="stage"></div>
+    <div class="msg" :class="{show: msg.show}" :style="{color: msg.color}">{{ msg.text }}</div>
+  </main>
+
+  <footer>
+    <div id="dpad">
+      <button class="pbtn" id="up">▲</button>
+      <button class="pbtn" id="left">◀</button>
+      <button class="pbtn" id="right">▶</button>
+      <button class="pbtn" id="down">▼</button>
+    </div>
+    <div class="hint">
+      矢印キー / ボタンでアーム移動 ・ スペース / 赤ボタンで落下 ・ ドラッグ視点 / ホイールズーム<br>
+      💤 寝そべった猫は絶好のチャンス ・ 獲得した猫は 🏠マイルーム に転送されます
+    </div>
+    <div class="side">
+      <div class="rowBtns">
+        <button class="btn" id="homeBtn" title="ホームページに戻る">↩ ホームへ</button>
+        <button class="btn" id="roomBtn">🏠 マイルーム</button>
+        <button class="btn" id="coinBtn">💰 コイン投入</button>
+      </div>
+      <button id="drop" :disabled="!hud.canDrop">落下！</button>
+    </div>
+  </footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.4.21/vue.global.prod.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="js/cat-shared.js"></script>
+<script src="js/game-engine.js"></script>
+<script>
+'use strict';
+/* ゲームページ(Vue層)：
+   - ヘッダー/フッターのUI状態を reactive に管理
+   - エンジン(createGameEngine)とはフックで接続
+   - サーバAPI(/api/*)でユーザー・セッション・獲得情報を永続化 */
+const { createApp, reactive, onMounted } = Vue;
+
+// モバイルのアドレスバー出し引き対策（マイルームと同じ仕組み）
+function setVhVar(){
+  const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+  document.documentElement.style.setProperty('--vh', `${h*0.01}px`);
+}
+setVhVar();
+addEventListener('resize', setVhVar);
+addEventListener('orientationchange', setVhVar);
+if(window.visualViewport) window.visualViewport.addEventListener('resize', setVhVar);
+
+async function api(path, body, method='POST'){
+  const res = await fetch(path, {
+    method,
+    headers: {'Content-Type':'application/json'},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if(!res.ok) throw new Error(`${method} ${path} -> ${res.status}`);
+  return res.json();
+}
+
+createApp({
+  setup(){
+    const hud = reactive({coins:5, score:0, points:0, stage:1, canDrop:true});
+    const msg = reactive({text:'', color:'#ffc94d', show:false});
+    let msgTimer = null, userId = null, sessionId = null, persistTimer = null;
+    let pendingPersist = false;   // マイルームからのコイン同期がこれを見て、送信中の上書きを避ける
+    let engineRef = null;
+
+    function showMsg(text, color='#ffc94d', dur=1700){
+      msg.text = text; msg.color = color; msg.show = true;
+      clearTimeout(msgTimer);
+      msgTimer = setTimeout(()=>msg.show=false, dur);
+    }
+    // コイン/特点の変化をデバウンスしてサーバへ保存
+    function persist(){
+      if(!userId) return;
+      pendingPersist = true;
+      clearTimeout(persistTimer);
+      persistTimer = setTimeout(()=>{
+        api(`/api/user/${userId}`,
+            {coins:hud.coins, points:hud.points, score:hud.score}, 'PATCH')
+          .catch(()=>{})
+          .finally(()=>{ pendingPersist = false; });
+      }, 800);
+    }
+
+    onMounted(async ()=>{
+      document.getElementById('homeBtn').addEventListener('click', ()=>{
+        location.href = 'lp.html';
+      });
+
+      // ユーザーIDの確保とセッション開始（サーバなしでもゲームは動く）
+      let initial = {};
+      try{
+        // ?newuser を付けて開くと、このブラウザのユーザーIDを破棄して新規発行する。
+        // 同じブラウザで複数ユーザーの動作を確認したいときの開発用ショートカット
+        // （本来は別ブラウザ/シークレットウィンドウ = 別ストレージで試すのが確実）。
+        if(new URLSearchParams(location.search).has('newuser'))
+          localStorage.removeItem('nekoUserId');
+        userId = localStorage.getItem('nekoUserId') || null;
+        const r = await api('/api/user', {userId});
+        userId = r.userId;
+        localStorage.setItem('nekoUserId', userId);
+        initial = {coins:r.user.coins, points:r.user.points, score:r.user.score};
+        const s = await api('/api/session/start', {userId});
+        sessionId = s.sessionId;
+      }catch(e){
+        console.warn('APIサーバ未接続（オフラインモードで続行）', e.message);
+      }
+
+      engineRef = createGameEngine({
+        initial,
+        showMsg,
+        onHud(h){ Object.assign(hud, h); persist(); },
+        onExternalSync(h){ Object.assign(hud, h); },   // サーバから読んだ値の反映のみ。persistは呼ばない
+        onCatch(entry){                       // 獲得猫をサーバに記録
+          if(userId) api('/api/catch', {userId, entry}).catch(()=>{});
+        },
+      });
+
+      // マイルームでコイン/とくてんを使った・増減した場合に、こちらの表示にも反映する。
+      // ローカルの変更がまだサーバへ送信中(pendingPersist)の間は、上書きレースを避けるため待つ。
+      if(userId){
+        setInterval(async ()=>{
+          if(pendingPersist) return;
+          try{
+            const r = await api(`/api/user/${userId}`, null, 'GET');
+            engineRef.syncWallet(r.user.coins, r.user.points);
+          }catch(e){}
+        }, 2500);
+      }
+
+      // プレイ終了時刻を記録（タブを閉じる/離れる時）
+      addEventListener('pagehide', ()=>{
+        if(userId && sessionId)
+          navigator.sendBeacon('/api/session/end',
+            JSON.stringify({userId, sessionId}));
+      });
+    });
+
+    return { hud, msg };
+  }
+}).mount('#app');
+</script>
+</body>
+</html>
