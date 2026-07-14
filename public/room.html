@@ -112,8 +112,11 @@
   /* 画面が狭い時は、統計(ねこ/とくてん/コイン/エサ)を項目間で均等配置にして詰まりにくくする */
   @media (max-width:480px){ .hstats{justify-content:space-between;gap:6px 10px} }
   .helpBtn{border:2px solid var(--line);border-radius:8px;padding:3px 10px;font-size:12px;
+           font-weight:700;background:rgba(255,255,255,.1);color:var(--cream);cursor:pointer}
+  .musicToggleBtn{border:2px solid var(--line);border-radius:8px;padding:3px 10px;font-size:12px;
            font-weight:700;background:rgba(255,255,255,.1);color:var(--cream);cursor:pointer;
            margin-left:auto}
+  .musicToggleBtn.on{background:#6fd0a8;color:#0d3a26;border-color:#6fd0a8}
   .helpOverlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:60;
                display:flex;align-items:center;justify-content:center;padding:16px}
   .helpCard{width:min(94vw,480px);max-height:80vh;max-height:80dvh;overflow:auto;
@@ -140,6 +143,7 @@
       <span>とくてん<b>{{ hud.points }}</b></span>
       <span>コイン<b>{{ hud.coins }}</b></span>
       <span>エサ<b>{{ hud.food }}</b></span>
+      <button class="musicToggleBtn" :class="{on: musicOn}" @click="toggleMusic">{{ musicOn ? '🎵 BGM オン' : '🎵 BGM' }}</button>
       <button class="helpBtn" @click="helpOpen = true">❓ 使い方</button>
     </div>
 
@@ -172,7 +176,6 @@
       <button class="menu-item" @click="convertPoints(); menuOpen=false">✨ とくてんをコインにする（10点→1コイン）</button>
       <button class="menu-item" @click="doResetFurniture(); menuOpen=false">🪑 家具をリセット</button>
       <button class="menu-item" @click="doResetCats(); menuOpen=false">🐱 猫をリセット</button>
-      <button class="menu-item" @click="toggleMusic(); menuOpen=false">{{ musicOn ? '🔇 音楽を止める' : '🎵 音楽を流す' }}</button>
       <button class="menu-item" @click="goHome(); menuOpen=false">🏠 ホームページに戻る</button>
     </div>
   </header>
@@ -323,7 +326,8 @@ const music = (()=>{
         const comp = ctx.createDynamicsCompressor();
         master.connect(comp); comp.connect(ctx.destination);
       }
-      ctx.resume();
+      ctx.resume();          // サスペンド状態からの復帰は毎回試みる（二重に呼んでも安全）
+      if(timer) return;      // スケジューラは既に動いていれば再作成しない
       step = 0; nextTime = ctx.currentTime + .06;
       timer = setInterval(tickScheduler, 30);
     },
@@ -348,10 +352,19 @@ createApp({
     const foodWarn = ref(false);
     const phraseOpen = ref(false);
     const helpOpen = ref(false);
-    const musicOn = ref(false);
+    // 最初から流す想定（musicWanted）。実際の再生はフォーカス/表示状態にも従わせ、
+    // ゲーム画面(別ウィンドウ)と音が重ならないようにする（syncMusicで一括判定）。
+    const musicOn = ref(true);
+    let musicWanted = true;
+    function syncMusic(){
+      const shouldPlay = musicWanted && !document.hidden && document.hasFocus();
+      if(shouldPlay) music.start();
+      else if(music.playing) music.stop();
+    }
     function toggleMusic(){
-      if(music.playing){ music.stop(); musicOn.value = false; }
-      else{ music.start(); musicOn.value = true; }
+      musicWanted = !musicWanted;
+      musicOn.value = musicWanted;
+      syncMusic();
     }
     const todaysPhrase = ref(todaysPhraseText());
     const owned = reactive({tower:false, sofa:false, cushion:false, house:false});
@@ -495,6 +508,17 @@ createApp({
     }
 
     onMounted(async ()=>{
+      // BGM：最初から流す想定。ブラウザの自動再生制限があるためマウント時にも試み、
+      // ダメなら最初のクリック/キー操作で開始する。ゲーム画面(別ウィンドウ)と音が
+      // 重ならないよう、非表示/非フォーカス時は自動で止め、復帰時（かつユーザーが
+      // 止めていなければ）自動で再開する。
+      syncMusic();
+      addEventListener('blur', syncMusic);
+      addEventListener('focus', syncMusic);
+      document.addEventListener('visibilitychange', syncMusic);
+      addEventListener('pointerdown', syncMusic, {once:true});
+      addEventListener('keydown', syncMusic, {once:true});
+
       const engine = createRoomEngine({
         showMsg,
         onHud(h){ Object.assign(hud, h); },

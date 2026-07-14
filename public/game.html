@@ -107,7 +107,6 @@
     </div>
   </footer>
 </div>
-<audio id="bgm" src="assets/sound/game_center1.mp3" loop preload="auto"></audio>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.4.21/vue.global.prod.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -141,6 +140,95 @@ async function api(path, body, method='POST'){
   return res.json();
 }
 
+// ============================================================
+// BGM：ゲームをやりたくなる、賑やかなゲームセンター風BGM（自作・WebAudio生成）
+//  - 疾走感ある150BPM。Em→C→G→D の高揚感あるコード進行に、
+//    四つ打ちキック＋刻むハット＋スクエア波の主旋律をのせたアーケード風ループ
+// ============================================================
+const music = (()=>{
+  let ctx = null, master = null, timer = null, step = 0, nextTime = 0;
+  const BPM = 150, SPB = 60/BPM/2;                 // 8分音符1つの秒数
+  const N = m => 440 * Math.pow(2, (m-69)/12);     // MIDI→Hz
+  // 4小節ループ（8分音符×32ステップ、1コード=8ステップ）。Em→C→G→D
+  const CHORDS = [ [28,31,35], [24,28,31], [31,35,38], [26,30,33] ];
+  const BASS = [
+    28,28,35,28, 28,35,28,28,
+    24,24,31,24, 24,31,24,24,
+    31,31,38,31, 31,38,31,31,
+    26,26,33,26, 26,33,26,26,
+  ];
+  const LEAD = [
+    64,-1,67,71, 74,71,67,64,
+    60,-1,64,67, 71,67,64,60,
+    67,-1,71,74, 78,74,71,67,
+    62,-1,66,69, 73,69,66,62,
+  ];
+  function tone(freq, t0, dur, type, vol, dest){
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(vol, t0+.008);
+    g.gain.exponentialRampToValueAtTime(.001, t0+dur);
+    o.connect(g); g.connect(dest);
+    o.start(t0); o.stop(t0+dur+.05);
+  }
+  function kick(t0){
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(150, t0);
+    o.frequency.exponentialRampToValueAtTime(46, t0+.09);
+    g.gain.setValueAtTime(.5, t0);
+    g.gain.exponentialRampToValueAtTime(.001, t0+.15);
+    o.connect(g); g.connect(master);
+    o.start(t0); o.stop(t0+.16);
+  }
+  function hat(t0){
+    const len = .045, buf = ctx.createBuffer(1, ctx.sampleRate*len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for(let i=0;i<d.length;i++) d[i] = (Math.random()*2-1)*(1-i/d.length);
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const g = ctx.createGain(); g.gain.value = .09;
+    const f = ctx.createBiquadFilter(); f.type='highpass'; f.frequency.value=7000;
+    src.connect(f); f.connect(g); g.connect(master);
+    src.start(t0);
+  }
+  function scheduleStep(i, t0){
+    const bar = Math.floor(i/8) % 4;
+    if(i % 8 === 0)                                                        // コード（短く高揚感のあるスタブ）
+      for(const m of CHORDS[bar]) tone(N(m+12), t0, SPB*3, 'triangle', .055, master);
+    if(i % 2 === 0) kick(t0); else hat(t0);                                 // 四つ打ちキック＋裏拍ハット
+    tone(N(BASS[i % 32]), t0, SPB*.85, 'sawtooth', .11, master);            // ベース
+    const lead = LEAD[i % 32];
+    if(lead > 0) tone(N(lead), t0, SPB*1.15, 'square', .08, master);        // 主旋律
+  }
+  function tickScheduler(){
+    while(nextTime < ctx.currentTime + .15){
+      scheduleStep(step, nextTime);
+      nextTime += SPB;
+      step++;
+    }
+  }
+  return {
+    start(){
+      if(!ctx){
+        ctx = new (window.AudioContext||window.webkitAudioContext)();
+        master = ctx.createGain(); master.gain.value = .5;
+        const comp = ctx.createDynamicsCompressor();
+        master.connect(comp); comp.connect(ctx.destination);
+      }
+      ctx.resume();          // サスペンド状態からの復帰は毎回試みる（二重に呼んでも安全）
+      if(timer) return;      // スケジューラは既に動いていれば再作成しない
+      step = 0; nextTime = ctx.currentTime + .06;
+      timer = setInterval(tickScheduler, 30);
+    },
+    stop(){
+      clearInterval(timer); timer = null;
+      if(ctx) ctx.suspend();
+    },
+    get playing(){ return !!timer; },
+  };
+})();
+
 createApp({
   setup(){
     const hud = reactive({coins:5, score:0, points:0, stage:1, canDrop:true});
@@ -172,19 +260,33 @@ createApp({
         location.href = 'lp.html';
       });
 
-      // BGM：ブラウザの自動再生制限があるため、まず自動再生を試み、
-      // ブロックされた場合はページ内の最初の操作をきっかけに再試行する
-      const bgm = document.getElementById('bgm');
+      // BGM：最初から流す想定（musicWanted）。ブラウザの自動再生制限があるため
+      // マウント時にも試み、ダメなら最初のクリック/キー操作で開始する。
+      // マイルーム(別ウィンドウ)と音が重ならないよう、非表示/非フォーカス時は自動で止め、
+      // 復帰時（かつユーザーが止めていなければ）自動で再開する。
       const musicBtn = document.getElementById('musicBtn');
-      bgm.volume = 0.35;
-      bgm.addEventListener('play', ()=>{ musicBtn.textContent = '🎵 BGM オン'; musicBtn.classList.add('on'); });
-      bgm.addEventListener('pause', ()=>{ musicBtn.textContent = '🎵 BGM'; musicBtn.classList.remove('on'); });
+      let musicWanted = true;
+      function paintMusicBtn(){
+        musicBtn.textContent = musicWanted ? '🎵 BGM オン' : '🎵 BGM';
+        musicBtn.classList.toggle('on', musicWanted);
+      }
+      function syncMusic(){
+        const shouldPlay = musicWanted && !document.hidden && document.hasFocus();
+        if(shouldPlay) music.start();
+        else if(music.playing) music.stop();
+      }
       musicBtn.addEventListener('click', ()=>{
-        if(bgm.paused) bgm.play().catch(()=>{});
-        else bgm.pause();
+        musicWanted = !musicWanted;
+        paintMusicBtn();
+        syncMusic();
       });
-      bgm.play().catch(()=>{});
-      addEventListener('pointerdown', ()=>{ if(bgm.paused) bgm.play().catch(()=>{}); }, {once:true});
+      paintMusicBtn();
+      syncMusic();
+      addEventListener('blur', syncMusic);
+      addEventListener('focus', syncMusic);
+      document.addEventListener('visibilitychange', syncMusic);
+      addEventListener('pointerdown', syncMusic, {once:true});
+      addEventListener('keydown', syncMusic, {once:true});
 
       // ユーザーIDの確保とセッション開始（サーバなしでもゲームは動く）
       let initial = {};
