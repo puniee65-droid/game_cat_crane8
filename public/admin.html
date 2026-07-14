@@ -40,7 +40,9 @@
   tbody tr:hover{background:#fbf6ea}
   td.num{text-align:right;font-variant-numeric:tabular-nums}
   .uid{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:#8a7b70}
-  .furn{font-size:13px}
+  .furn{font-size:14px;letter-spacing:2px}
+  .furnBadge{display:inline-block;opacity:.28;filter:grayscale(1)}
+  .furnBadge.owned{opacity:1;filter:none}
   .empty{padding:40px;text-align:center;color:#8a7b70}
 
   /* ---------- 詳細パネル ---------- */
@@ -87,7 +89,7 @@
         <th data-key="score">ゲット数</th>
         <th data-key="food">エサ</th>
         <th data-key="catsCount">保有猫</th>
-        <th>家具</th>
+        <th data-key="furnitureCount">家具（🐾猫タワー 🛋ソファー 🔴クッション 🏡猫小屋）</th>
         <th data-key="sessionsCount">セッション数</th>
       </tr>
     </thead>
@@ -147,7 +149,9 @@ async function fetchUsers(){
     return false;
   }
   const data = await res.json();
-  users = (data.users || []).map(u => ({ ...u, lastActive: lastActiveOf(u), catsCount: (u.cats||[]).length, sessionsCount: (u.sessions||[]).length }));
+  users = (data.users || []).map(u => ({ ...u, lastActive: lastActiveOf(u), catsCount: (u.cats||[]).length,
+    sessionsCount: (u.sessions||[]).length,
+    furnitureCount: Object.keys(FURNITURE_ICON).filter(k => u.furniture && u.furniture[k]).length }));
   document.getElementById('gate').style.display = 'none';
   document.getElementById('main').style.display = 'block';
   render();
@@ -164,8 +168,10 @@ function render(){
   rows.innerHTML = '';
   for(const u of sorted){
     const tr = document.createElement('tr');
-    const furn = Object.keys(FURNITURE_ICON).filter(k => u.furniture && u.furniture[k])
-                   .map(k => FURNITURE_ICON[k]).join(' ') || '―';
+    const furn = Object.entries(FURNITURE_ICON).map(([k, icon]) => {
+      const owned = !!(u.furniture && u.furniture[k]);
+      return `<span class="furnBadge${owned?' owned':''}" title="${icon}${owned?'：購入済み':'：未購入'}">${icon}</span>`;
+    }).join('') + ` <span style="opacity:.6">(${u.furnitureCount}/4)</span>`;
     tr.innerHTML = `
       <td class="uid">${u.userId}</td>
       <td>${fmtJst(u.createdAt)}</td>
