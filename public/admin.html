@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>ねこキャッチャー 管理画面</title>
+<style>
+  :root{ --ink:#2a2320; --bg:#f4ede0; --panel:#fffdf8; --line:#e3d5bd; --gold:#b98a1c; --pink:#e26a8a; }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:system-ui,"Hiragino Kaku Gothic ProN",sans-serif;
+       padding:20px}
+  h1{font-size:19px;margin-bottom:14px}
+  h1 small{font-weight:400;color:#8a7b70;font-size:.6em;margin-left:.6em}
+
+  /* ---------- トークン入力ゲート ---------- */
+  #gate{max-width:360px;margin:80px auto;background:var(--panel);border:1px solid var(--line);
+        border-radius:14px;padding:24px;box-shadow:0 6px 18px rgba(0,0,0,.06)}
+  #gate p{font-size:13px;color:#6d5b52;margin-bottom:14px;line-height:1.7}
+  #gate input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font-size:14px;
+              margin-bottom:10px}
+  #gate button{width:100%;padding:10px;border:none;border-radius:8px;background:var(--gold);
+               color:#fff;font-weight:700;font-size:14px;cursor:pointer}
+  #gate .err{color:#c0392b;font-size:12.5px;margin-top:8px;min-height:1.4em}
+
+  /* ---------- メイン ---------- */
+  #main{display:none;max-width:1200px;margin:0 auto}
+  .toolbar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+  .summary{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:#6d5b52}
+  .summary b{color:var(--ink);font-size:1.15em;margin-left:.3em}
+  .toolbar button{border:1px solid var(--line);border-radius:8px;padding:7px 14px;font-size:13px;
+                  background:var(--panel);cursor:pointer}
+  .toolbar button:hover{background:#fff}
+  table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);
+        border-radius:10px;overflow:hidden;font-size:13px}
+  th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{background:#f0e6d2;font-weight:700;cursor:pointer;user-select:none}
+  th:hover{background:#e9dcc0}
+  tbody tr{cursor:pointer}
+  tbody tr:hover{background:#fbf6ea}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  .uid{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:#8a7b70}
+  .furn{font-size:13px}
+  .empty{padding:40px;text-align:center;color:#8a7b70}
+
+  /* ---------- 詳細パネル ---------- */
+  .detail{display:none;max-width:1200px;margin:14px auto 0;background:var(--panel);
+          border:1px solid var(--line);border-radius:10px;padding:16px}
+  .detail h2{font-size:14px;margin-bottom:10px}
+  .detail .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media (max-width:720px){ .detail .grid{grid-template-columns:1fr} }
+  .detail h3{font-size:12.5px;color:#8a7b70;margin-bottom:6px}
+  .detail ul{list-style:none;font-size:12.5px;max-height:220px;overflow:auto;
+             border:1px solid var(--line);border-radius:8px}
+  .detail li{padding:6px 10px;border-bottom:1px solid var(--line)}
+  .detail li:last-child{border-bottom:none}
+  .closeDetail{float:right;border:none;background:none;font-size:16px;cursor:pointer;color:#8a7b70}
+</style>
+</head>
+<body>
+
+<h1>🐈 ねこキャッチャー 管理画面 <small>ユーザー利用状況（db.jsonのCloudflare版）</small></h1>
+
+<div id="gate">
+  <p>閲覧にはトークンが必要です。<br>Node版は起動時ログ、Cloudflare版は <code>wrangler pages secret</code> で設定した値を入力してください。</p>
+  <input id="tokenInput" type="password" placeholder="ADMIN_TOKEN" autocomplete="off">
+  <button id="gateBtn">開く</button>
+  <div class="err" id="gateErr"></div>
+</div>
+
+<div id="main">
+  <div class="toolbar">
+    <div class="summary" id="summary"></div>
+    <div>
+      <button id="refreshBtn">🔄 更新</button>
+      <button id="logoutBtn">🔒 トークンを削除</button>
+    </div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th data-key="userId">ユーザーID</th>
+        <th data-key="createdAt">作成日時(JST)</th>
+        <th data-key="lastActive">最終利用(JST)</th>
+        <th data-key="coins">コイン</th>
+        <th data-key="points">とくてん</th>
+        <th data-key="score">ゲット数</th>
+        <th data-key="food">エサ</th>
+        <th data-key="catsCount">保有猫</th>
+        <th>家具</th>
+        <th data-key="sessionsCount">セッション数</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <div class="empty" id="emptyMsg" style="display:none">まだユーザーがいません</div>
+</div>
+
+<div class="detail" id="detail">
+  <button class="closeDetail" id="closeDetailBtn">✕</button>
+  <h2 id="detailTitle"></h2>
+  <div class="grid">
+    <div>
+      <h3>獲得した猫（新しい順）</h3>
+      <ul id="detailCats"></ul>
+    </div>
+    <div>
+      <h3>セッション履歴（新しい順）</h3>
+      <ul id="detailSessions"></ul>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+const FURNITURE_ICON = { tower:'🐾', sofa:'🛋', cushion:'🔴', house:'🏡' };
+let users = [];
+let sortKey = 'lastActive', sortDir = -1;
+
+function getToken(){ return sessionStorage.getItem('nekoAdminToken') || ''; }
+function setToken(t){ sessionStorage.setItem('nekoAdminToken', t); }
+function clearToken(){ sessionStorage.removeItem('nekoAdminToken'); }
+
+function lastActiveOf(u){
+  let t = u.createdAt || 0;
+  for(const s of (u.sessions||[])) t = Math.max(t, s.endedAt || s.startedAt || 0);
+  for(const c of (u.cats||[])) t = Math.max(t, c.caughtAt || 0);
+  return t;
+}
+function fmtJst(epochMs){
+  if(!epochMs) return '―';
+  return new Intl.DateTimeFormat('sv-SE', {
+    timeZone:'Asia/Tokyo', year:'numeric', month:'2-digit', day:'2-digit',
+    hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false,
+  }).format(new Date(epochMs)).replace(',', '');
+}
+
+async function fetchUsers(){
+  const gateErr = document.getElementById('gateErr');
+  gateErr.textContent = '';
+  const res = await fetch('/api/admin/users', { headers: { 'X-Admin-Token': getToken() } });
+  if(res.status === 401){
+    clearToken();
+    document.getElementById('gate').style.display = 'block';
+    document.getElementById('main').style.display = 'none';
+    gateErr.textContent = 'トークンが正しくありません。';
+    return false;
+  }
+  const data = await res.json();
+  users = (data.users || []).map(u => ({ ...u, lastActive: lastActiveOf(u), catsCount: (u.cats||[]).length, sessionsCount: (u.sessions||[]).length }));
+  document.getElementById('gate').style.display = 'none';
+  document.getElementById('main').style.display = 'block';
+  render();
+  return true;
+}
+
+function render(){
+  const sorted = [...users].sort((a,b) => {
+    const av = a[sortKey], bv = b[sortKey];
+    if(typeof av === 'string') return av.localeCompare(bv) * sortDir;
+    return ((av||0) - (bv||0)) * sortDir;
+  });
+  const rows = document.getElementById('rows');
+  rows.innerHTML = '';
+  for(const u of sorted){
+    const tr = document.createElement('tr');
+    const furn = Object.keys(FURNITURE_ICON).filter(k => u.furniture && u.furniture[k])
+                   .map(k => FURNITURE_ICON[k]).join(' ') || '―';
+    tr.innerHTML = `
+      <td class="uid">${u.userId}</td>
+      <td>${fmtJst(u.createdAt)}</td>
+      <td>${fmtJst(u.lastActive)}</td>
+      <td class="num">${u.coins ?? 0}</td>
+      <td class="num">${u.points ?? 0}</td>
+      <td class="num">${u.score ?? 0}</td>
+      <td class="num">${u.food ?? 0}</td>
+      <td class="num">${u.catsCount}</td>
+      <td class="furn">${furn}</td>
+      <td class="num">${u.sessionsCount}</td>`;
+    tr.addEventListener('click', () => showDetail(u));
+    rows.appendChild(tr);
+  }
+  document.getElementById('emptyMsg').style.display = sorted.length ? 'none' : 'block';
+
+  const totalCoins = users.reduce((s,u) => s + (u.coins||0), 0);
+  const totalCats = users.reduce((s,u) => s + u.catsCount, 0);
+  document.getElementById('summary').innerHTML =
+    `ユーザー数<b>${users.length}</b>　合計コイン<b>${totalCoins}</b>　合計獲得猫<b>${totalCats}</b>`;
+}
+
+function showDetail(u){
+  document.getElementById('detailTitle').textContent = `${u.userId} の履歴`;
+  const cats = [...(u.cats||[])].sort((a,b) => (b.caughtAt||0) - (a.caughtAt||0));
+  document.getElementById('detailCats').innerHTML = cats.length
+    ? cats.map(c => `<li>${(c.def && c.def.name) || '?'} ― ${fmtJst(c.caughtAt)}</li>`).join('')
+    : '<li>なし</li>';
+  const sessions = [...(u.sessions||[])].sort((a,b) => (b.startedAt||0) - (a.startedAt||0));
+  document.getElementById('detailSessions').innerHTML = sessions.length
+    ? sessions.map(s => `<li>${fmtJst(s.startedAt)} 〜 ${s.endedAt ? fmtJst(s.endedAt) : '(継続中/未終了)'}</li>`).join('')
+    : '<li>なし</li>';
+  document.getElementById('detail').style.display = 'block';
+  document.getElementById('detail').scrollIntoView({ behavior:'smooth', block:'nearest' });
+}
+
+document.getElementById('closeDetailBtn').addEventListener('click', () => {
+  document.getElementById('detail').style.display = 'none';
+});
+document.getElementById('gateBtn').addEventListener('click', () => {
+  const t = document.getElementById('tokenInput').value.trim();
+  if(!t) return;
+  setToken(t);
+  fetchUsers();
+});
+document.getElementById('tokenInput').addEventListener('keydown', e => {
+  if(e.key === 'Enter') document.getElementById('gateBtn').click();
+});
+document.getElementById('refreshBtn').addEventListener('click', fetchUsers);
+document.getElementById('logoutBtn').addEventListener('click', () => {
+  clearToken();
+  document.getElementById('gate').style.display = 'block';
+  document.getElementById('main').style.display = 'none';
+  document.getElementById('detail').style.display = 'none';
+});
+document.querySelectorAll('th[data-key]').forEach(th => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.key;
+    sortDir = (sortKey === key) ? -sortDir : -1;
+    sortKey = key;
+    render();
+  });
+});
+
+if(getToken()) fetchUsers();
+</script>
+</body>
+</html>

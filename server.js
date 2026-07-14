@@ -37,7 +37,14 @@ class JsonFileStore {
   }
   async getUser(id){ return this.db.users[id] || null; }
   async putUser(user){ this.db.users[user.userId] = user; this._save(); return user; }
+  async listUsers(){ return Object.values(this.db.users); }
 }
+
+// admin.html からの利用状況閲覧用トークン。環境変数が無ければ起動のたびにランダム発行し、
+// コンソールに表示する（未設定のまま誰でも見られる状態を防ぐフェイルクローズ）。
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || crypto.randomUUID();
+if(!process.env.ADMIN_TOKEN)
+  console.log(`  admin.html 用トークン（未設定のため今回だけ有効）: ${ADMIN_TOKEN}`);
 
 // ---------------- Nodeアダプタ（静的配信 + API） ----------------
 const MIME = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8',
@@ -62,7 +69,8 @@ const server = http.createServer(async (req, res)=>{
       catch(e){ body = {}; }
     }
     try{
-      const { status, data } = await handleApi(req.method, pathname, body, store);
+      const admin = { adminToken: ADMIN_TOKEN, requestToken: req.headers['x-admin-token'] };
+      const { status, data } = await handleApi(req.method, pathname, body, store, admin);
       res.writeHead(status, {'Content-Type':'application/json'});
       res.end(JSON.stringify(data));
     }catch(err){
