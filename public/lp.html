@@ -42,9 +42,9 @@
   .heroMedia{position:relative;width:min(78vw,320px);height:min(78vw,320px);margin:0 auto 14px;
     border-radius:28px;overflow:hidden;background:#0e1a24;
     box-shadow:0 16px 40px rgba(226,106,138,.35), 0 0 0 6px #fff}
-  .heroMedia video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+  .heroMedia video, .heroMedia img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
     opacity:0;transition:opacity .6s}
-  .heroMedia video.show{opacity:1}
+  .heroMedia video.show, .heroMedia img.show{opacity:1}
   .hero h1{font-size:clamp(28px,7.4vw,52px);line-height:1.35;letter-spacing:.02em;
     text-shadow:0 2px 0 #fff}
   .hero h1 .accent{color:var(--pinkD)}
@@ -162,6 +162,8 @@
   <div class="heroMedia">
     <video id="hv1" src="assets/LP/hero1.mp4" muted playsinline preload="auto"></video>
     <video id="hv2" src="assets/LP/hero2.mp4" muted playsinline preload="auto"></video>
+    <img id="himg1" src="assets/LP/hero3.png" alt="">
+    <img id="himg2" src="assets/LP/hero4.png" alt="">
   </div>
   <h1>猫、飼えない。<br>だから、<span class="accent">ここで飼う。</span></h1>
   <p class="lead">クレーンゲームで捕まえた猫が、そのままお部屋に住みつきます。<br>
@@ -436,25 +438,40 @@ requestAnimationFrame(loop);
 }
 
 // ============================================================
-// ヒーロー動画：2本を交互にクロスフェード再生
+// ヒーローメディア：動画2本＋静止画2枚を順にクロスフェード再生
+//  - 動画は再生終了(ended)で、静止画は一定時間(IMAGE_DUR)で次へ進む
 // ============================================================
 {
-  const vids = [document.getElementById('hv1'), document.getElementById('hv2')];
-  let cur = 0;
-  function playNext(){
-    const nxt = 1 - cur;
-    vids[nxt].currentTime = 0;
-    vids[nxt].play().catch(()=>{});
-    vids[nxt].classList.add('show');
-    vids[cur].classList.remove('show');
-    cur = nxt;
+  const IMAGE_DUR = 3200;   // 静止画1枚あたりの表示時間(ms)
+  const slides = [
+    { el: document.getElementById('hv1'),   type: 'video' },
+    { el: document.getElementById('hv2'),   type: 'video' },
+    { el: document.getElementById('himg1'), type: 'image' },
+    { el: document.getElementById('himg2'), type: 'image' },
+  ];
+  let cur = 0, imgTimer = null;
+  function showSlide(i){
+    const prev = slides[cur], next = slides[i];
+    if(prev.type === 'video') prev.el.pause();
+    clearTimeout(imgTimer);
+    prev.el.classList.remove('show');
+    next.el.classList.add('show');
+    cur = i;
+    if(next.type === 'video'){
+      next.el.currentTime = 0;
+      next.el.play().catch(()=>{});
+    }else{
+      imgTimer = setTimeout(playNext, IMAGE_DUR);
+    }
   }
-  for(const v of vids) v.addEventListener('ended', playNext);
-  vids[0].classList.add('show');
-  vids[0].play().catch(()=>{});
+  function playNext(){ showSlide((cur + 1) % slides.length); }
+  for(const s of slides) if(s.type === 'video') s.el.addEventListener('ended', playNext);
+  slides[0].el.classList.add('show');
+  slides[0].el.play().catch(()=>{});
   // モバイルで自動再生がブロックされた場合、最初のタップで開始する保険
   document.addEventListener('pointerdown', ()=>{
-    if(vids[cur].paused) vids[cur].play().catch(()=>{});
+    const s = slides[cur];
+    if(s.type === 'video' && s.el.paused) s.el.play().catch(()=>{});
   }, {once:true});
 }
 
