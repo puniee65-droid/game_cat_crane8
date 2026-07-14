@@ -1,0 +1,7 @@
+name = "neko-catcher"
+pages_build_output_dir = "public"
+compatibility_date = "2025-11-09"
+
+[[kv_namespaces]]
+binding = "NEKO_KV"
+id = "ea6ac1e75cec496ea0f33d3553ba9b06"
