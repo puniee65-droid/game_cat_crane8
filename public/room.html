@@ -172,6 +172,7 @@
       <button class="menu-item" @click="convertPoints(); menuOpen=false">✨ とくてんをコインにする（10点→1コイン）</button>
       <button class="menu-item" @click="doResetFurniture(); menuOpen=false">🪑 家具をリセット</button>
       <button class="menu-item" @click="doResetCats(); menuOpen=false">🐱 猫をリセット</button>
+      <button class="menu-item" @click="toggleMusic(); menuOpen=false">{{ musicOn ? '🔇 音楽を止める' : '🎵 音楽を流す' }}</button>
       <button class="menu-item" @click="goHome(); menuOpen=false">🏠 ホームページに戻る</button>
     </div>
   </header>
@@ -271,6 +272,69 @@ function todaysPhraseText(){
   return PHRASES[h % PHRASES.length];
 }
 
+// ============================================================
+// BGM：マイルームにふさわしい、まったりしたアンビエントBGM（自作・WebAudio生成）
+//  - ゆったり74BPM。Cmaj7→Am7→Dm7→G7 のジャズ寄りコード進行を長く伸ばすパッドに、
+//    まばらなベルの旋律をのせた、日向ぼっこ・昼寝を邪魔しない静かなループ
+//  - ブラウザの自動再生制限のため、☰メニューの🎵ボタン押下で開始
+// ============================================================
+const music = (()=>{
+  let ctx = null, master = null, timer = null, step = 0, nextTime = 0;
+  const BPM = 74, SPB = 60/BPM/2;                  // 8分音符1つの秒数
+  const N = m => 440 * Math.pow(2, (m-69)/12);     // MIDI→Hz
+  const CHORDS = [ [60,64,67,71], [57,60,64,67], [62,65,69,72], [55,59,62,65] ]; // Cmaj7,Am7,Dm7,G7
+  // ベルの旋律（休符多め・まばら）。1コード=16ステップ×4コード=64ステップで1周
+  const BELL = [
+    -1,-1,79,-1,-1,-1,76,-1, -1,-1,-1,-1,72,-1,-1,-1,
+    -1,-1,77,-1,-1,-1,-1,-1, -1,74,-1,-1,-1,-1,-1,-1,
+    -1,-1,81,-1,-1,-1,77,-1, -1,-1,-1,-1,74,-1,-1,-1,
+    -1,-1,74,-1,-1,-1,71,-1, -1,-1,67,-1,-1,-1,-1,-1,
+  ];
+  function tone(freq, t0, dur, type, vol, dest){
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(vol, t0+.05);
+    g.gain.exponentialRampToValueAtTime(.001, t0+dur);
+    o.connect(g); g.connect(dest);
+    o.start(t0); o.stop(t0+dur+.05);
+  }
+  function scheduleStep(i, t0){
+    const bar = Math.floor(i/16) % 4;
+    if(i % 16 === 0){
+      for(const m of CHORDS[bar]) tone(N(m), t0, SPB*15, 'sine', .04, master);   // 和音パッド（長く伸ばす）
+      tone(N(CHORDS[bar][0]-12), t0, SPB*8, 'sine', .10, master);                // ルート音のベース
+    }
+    const bell = BELL[i % 64];
+    if(bell > 0) tone(N(bell), t0, SPB*3, 'triangle', .06, master);              // ベル旋律
+  }
+  function tickScheduler(){
+    while(nextTime < ctx.currentTime + .15){
+      scheduleStep(step, nextTime);
+      nextTime += SPB;
+      step++;
+    }
+  }
+  return {
+    start(){
+      if(!ctx){
+        ctx = new (window.AudioContext||window.webkitAudioContext)();
+        master = ctx.createGain(); master.gain.value = .5;
+        const comp = ctx.createDynamicsCompressor();
+        master.connect(comp); comp.connect(ctx.destination);
+      }
+      ctx.resume();
+      step = 0; nextTime = ctx.currentTime + .06;
+      timer = setInterval(tickScheduler, 30);
+    },
+    stop(){
+      clearInterval(timer); timer = null;
+      if(ctx) ctx.suspend();
+    },
+    get playing(){ return !!timer; },
+  };
+})();
+
 createApp({
   setup(){
     const hud = reactive({count:0, points:0, coins:0, food:0});
@@ -284,6 +348,11 @@ createApp({
     const foodWarn = ref(false);
     const phraseOpen = ref(false);
     const helpOpen = ref(false);
+    const musicOn = ref(false);
+    function toggleMusic(){
+      if(music.playing){ music.stop(); musicOn.value = false; }
+      else{ music.start(); musicOn.value = true; }
+    }
     const todaysPhrase = ref(todaysPhraseText());
     const owned = reactive({tower:false, sofa:false, cushion:false, house:false});
     // 価格はコイン。サーバ(server.js FURNITURE_PRICES)と一致させること
@@ -474,7 +543,7 @@ createApp({
              doResetFurniture, doResetCats, goHome, backToGame,
              videoOpen, catVideo, currentVideoUrl, closeVideo,
              foodWarn, phraseOpen, todaysPhrase, togglePhrase,
-             doFeed, doPlayRoom, doAdventure, helpOpen };
+             doFeed, doPlayRoom, doAdventure, helpOpen, musicOn, toggleMusic };
   }
 }).mount('#app');
 </script></script>

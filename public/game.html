@@ -55,6 +55,8 @@
   .btn{border:none;border-radius:12px;padding:8px 14px;font-weight:700;font-size:13px;
        cursor:pointer;user-select:none;box-shadow:0 4px 0 rgba(0,0,0,.3)}
   .btn:active{transform:translateY(3px);box-shadow:0 1px 0 rgba(0,0,0,.3)}
+  #musicBtn{background:rgba(255,255,255,.14);color:var(--cream)}
+  #musicBtn.on{background:#6fd0a8;color:#0d3a26}
   #roomBtn{background:#b8a1e8;color:#2e1a52}
   #coinBtn{background:var(--gold);color:#5a3d00}
   #drop{width:96px;height:96px;border-radius:50%;border:5px solid #d8455f;
@@ -97,6 +99,7 @@
     <div class="side">
       <div class="rowBtns">
         <button class="btn" id="homeBtn" title="ホームページに戻る">↩ ホームへ</button>
+        <button class="btn" id="musicBtn" title="BGMのオン・オフ">🎵 BGM</button>
         <button class="btn" id="roomBtn">🏠 マイルーム</button>
         <button class="btn" id="coinBtn">💰 コイン投入</button>
       </div>
@@ -104,6 +107,7 @@
     </div>
   </footer>
 </div>
+<audio id="bgm" src="assets/sound/game_center1.mp3" loop preload="auto"></audio>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.4.21/vue.global.prod.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -167,6 +171,20 @@ createApp({
       document.getElementById('homeBtn').addEventListener('click', ()=>{
         location.href = 'lp.html';
       });
+
+      // BGM：ブラウザの自動再生制限があるため、まず自動再生を試み、
+      // ブロックされた場合はページ内の最初の操作をきっかけに再試行する
+      const bgm = document.getElementById('bgm');
+      const musicBtn = document.getElementById('musicBtn');
+      bgm.volume = 0.35;
+      bgm.addEventListener('play', ()=>{ musicBtn.textContent = '🎵 BGM オン'; musicBtn.classList.add('on'); });
+      bgm.addEventListener('pause', ()=>{ musicBtn.textContent = '🎵 BGM'; musicBtn.classList.remove('on'); });
+      musicBtn.addEventListener('click', ()=>{
+        if(bgm.paused) bgm.play().catch(()=>{});
+        else bgm.pause();
+      });
+      bgm.play().catch(()=>{});
+      addEventListener('pointerdown', ()=>{ if(bgm.paused) bgm.play().catch(()=>{}); }, {once:true});
 
       // ユーザーIDの確保とセッション開始（サーバなしでもゲームは動く）
       let initial = {};
