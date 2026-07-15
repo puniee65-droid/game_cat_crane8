@@ -82,6 +82,7 @@
     <thead>
       <tr>
         <th data-key="userId">ユーザーID</th>
+        <th data-key="roomName">部屋の名前</th>
         <th data-key="createdAt">作成日時(JST)</th>
         <th data-key="lastActive">最終利用(JST)</th>
         <th data-key="coins">コイン</th>
@@ -118,6 +119,10 @@
 const FURNITURE_ICON = { tower:'🐾', sofa:'🛋', cushion:'🔴', house:'🏡' };
 let users = [];
 let sortKey = 'lastActive', sortDir = -1;
+
+function escHtml(s){
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 
 function getToken(){ return sessionStorage.getItem('nekoAdminToken') || ''; }
 function setToken(t){ sessionStorage.setItem('nekoAdminToken', t); }
@@ -174,6 +179,7 @@ function render(){
     }).join('') + ` <span style="opacity:.6">(${u.furnitureCount}/4)</span>`;
     tr.innerHTML = `
       <td class="uid">${u.userId}</td>
+      <td>${escHtml(u.roomName) || '―'}</td>
       <td>${fmtJst(u.createdAt)}</td>
       <td>${fmtJst(u.lastActive)}</td>
       <td class="num">${u.coins ?? 0}</td>
@@ -198,7 +204,7 @@ function showDetail(u){
   document.getElementById('detailTitle').textContent = `${u.userId} の履歴`;
   const cats = [...(u.cats||[])].sort((a,b) => (b.caughtAt||0) - (a.caughtAt||0));
   document.getElementById('detailCats').innerHTML = cats.length
-    ? cats.map(c => `<li>${(c.def && c.def.name) || '?'} ― ${fmtJst(c.caughtAt)}</li>`).join('')
+    ? cats.map(c => `<li>${c.nickname ? escHtml(c.nickname)+'／' : ''}${escHtml((c.def && c.def.name) || '?')} ― ${fmtJst(c.caughtAt)}</li>`).join('')
     : '<li>なし</li>';
   const sessions = [...(u.sessions||[])].sort((a,b) => (b.startedAt||0) - (a.startedAt||0));
   document.getElementById('detailSessions').innerHTML = sessions.length

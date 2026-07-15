@@ -452,7 +452,7 @@ function updateJump(cat, dt){                            // true=着地
 
 // ---------- 部屋の猫 ----------
 const cats = [];
-function makeRoomCat(def){
+function makeRoomCat(def, catId, nickname){
   const m = buildCatModel(def);
   const g = m.group;
   const scale = (def.props.scale || 1) * .95;
@@ -471,6 +471,8 @@ function makeRoomCat(def){
     playKind: null, playPhase: 0, adventureTarget: null, eatT: -1,
     name: def.name || 'ねこ',
     points: Number.isFinite(+def.points) ? +def.points : 10,
+    catId: catId || null,             // サーバ側の獲得猫IDと紐づけ（名前つけAPIに使用）
+    nickname: nickname || '',         // ユーザーがつけた名前
   };
   if(def.rainbow){
     g.userData.rainbowMeshes = applyRainbowStripes(g, scale);   // 7色縞々（共通実装）
@@ -478,14 +480,31 @@ function makeRoomCat(def){
   return g;
 }
 
-function spawnRoomCat(def){
-  const c = makeRoomCat(def);
-  c.position.set(1.6+(Math.random()-.5), 0, .4+(Math.random()-.5));   // 転送着地点
+// 新規の猫（ゲームで今まさに獲得され、マイルームに初めて入ってくる猫）：
+// 部屋の中央あたりに出現演出つきで現れ、窓を見てから定位置へ歩いていく。
+function spawnRoomCat(def, catId, nickname){
+  const c = makeRoomCat(def, catId, nickname);
+  c.position.set((Math.random()-.5)*1.6, 0, (Math.random()-.5)*1.6);   // 部屋の中央付近に出現
   c.rotation.y = Math.random()*Math.PI*2;
   c.scale.setScalar(.001);                                             // 出現演出用に極小から
   scene.add(c); cats.push(c);
   chime();
   showMsg(`✨ ${c.userData.name}がやってきた！`);
+  refreshHUD();
+  return c;
+}
+
+// 過去に獲得済みの猫（再入室時の復元）：演出なしで、最初から壁を背にした定位置に座らせておく。
+function placeCatAtHome(def, catId, nickname){
+  const c = makeRoomCat(def, catId, nickname);
+  const slot = nextWallSeat();
+  c.position.copy(slot.pos);
+  c.rotation.y = slot.ry;
+  c.userData.baseY = 0;
+  c.userData.state = 'rest';
+  c.userData.restMode = 'stand';
+  c.userData.homeSeat = { pos: slot.pos.clone(), ry: slot.ry };
+  scene.add(c); cats.push(c);
   refreshHUD();
   return c;
 }
@@ -971,8 +990,17 @@ function receiveEntry(e, focusSelf){
   if(!e || !e.id || seenIds.has(e.id)) return;
   seenIds.add(e.id);
   if(e.def && e.def.colors && e.def.props){
-    spawnRoomCat(e.def);
+    spawnRoomCat(e.def, e.id, e.nickname);
     if(focusSelf){ try{ window.focus(); }catch(err){} }
+  }
+}
+// 過去に獲得済みの猫の復元専用（マイルーム起動時の初回読み込みでのみ使用）。
+// 出現演出・効果音なしで、いきなり壁際の定位置に座った状態にする。
+function restoreEntry(e){
+  if(!e || !e.id || seenIds.has(e.id)) return;
+  seenIds.add(e.id);
+  if(e.def && e.def.colors && e.def.props){
+    placeCatAtHome(e.def, e.id, e.nickname);
   }
 }
 // ゲームから今この瞬間に転送されてきた1匹だけを受け取る（即時反映のショートカット）。
@@ -1005,7 +1033,7 @@ let last=performance.now();
 
   // ---- 外部公開API ----
   return {
-    receiveEntry, purchase,
+    receiveEntry, restoreEntry, purchase,
     resetCats: resetCatsOnly, resetFurniture: resetFurnitureOnly,
     feedCat, playWithFurniture, startAdventure,
   };

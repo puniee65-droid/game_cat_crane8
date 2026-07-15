@@ -128,6 +128,19 @@
             padding:10px 28px;font-weight:700;font-size:14px;cursor:pointer;
             background:var(--gold);color:#5a3d00;box-shadow:0 4px 0 #b98a1c}
   .helpCard .closeBtn:active{transform:translateY(3px);box-shadow:none}
+  .roomNameInput{width:100%;padding:10px 12px;border-radius:10px;border:none;font-size:15px;
+            margin-bottom:14px;font-family:inherit}
+  .nickRow{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;
+           background:rgba(255,255,255,.94);border-radius:10px;padding:8px 12px}
+  .nickLabel{font-weight:800;font-size:14px;color:#3a2e2a}
+  .nickSub{font-weight:600;font-size:12px;color:#8a7b70;margin-left:4px}
+  .nickBtn{border:none;border-radius:10px;padding:6px 10px;font-weight:700;font-size:12px;
+           cursor:pointer;background:var(--gold);color:#5a3d00;flex:none}
+  .nickEdit{flex:none;display:flex;gap:8px}
+  .nickEdit input{flex:1;padding:8px 10px;border-radius:10px;border:1px solid #ddd;font-size:14px;
+           font-family:inherit}
+  .nickEdit button{border:none;border-radius:10px;padding:8px 14px;font-weight:700;
+           cursor:pointer;background:#6fd0a8;color:#0d3a26}
 </style>
 </head>
 <body>
@@ -135,7 +148,7 @@
   <header>
     <div class="headerTop">
       <button id="headerBackBtn" v-if="hasOpener" @click="backToGame">🎮 ゲームへ戻る</button>
-      <h1>🏠 ねこマイルーム <small>v9</small></h1>
+      <h1>🏠 {{ roomName || 'ねこマイルーム' }} <small>v9</small></h1>
       <button id="menuBtn" @click="menuOpen = !menuOpen"><span class="hamIcon">☰</span>メニュー</button>
     </div>
     <div class="stats hstats">
@@ -180,6 +193,19 @@
     </div>
   </header>
 
+  <!-- 初回入室時：お部屋の名前を決めてもらう -->
+  <div class="helpOverlay" v-if="roomNameModalOpen">
+    <div class="helpCard">
+      <h2>お部屋の名前を決めてください</h2>
+      <p>
+        あなたの猫たちが暮らすお部屋に、名前をつけてあげましょう。<br>
+        （例：にゃんこ部屋）
+      </p>
+      <input class="roomNameInput" v-model="roomNameInput" maxlength="20" placeholder="にゃんこ部屋">
+      <button class="closeBtn" @click="saveRoomName">きめる</button>
+    </div>
+  </div>
+
   <main>
     <div id="stage"></div>
     <div class="msg" :class="{show: msg.show}">{{ msg.text }}</div>
@@ -192,6 +218,14 @@
         <button class="videoClose" @click="closeVideo">✕</button>
         <video ref="catVideo" :src="currentVideoUrl"
                autoplay playsinline muted></video>
+      </div>
+      <div class="nickRow">
+        <span class="nickLabel">{{ currentNickname || currentCatLabel }}<span v-if="currentNickname" class="nickSub">（{{ currentCatLabel }}）</span></span>
+        <button class="nickBtn" @click="nicknameEditing = !nicknameEditing; nicknameInput = currentNickname">🏷 猫に名前をつける</button>
+      </div>
+      <div class="nickEdit" v-if="nicknameEditing">
+        <input v-model="nicknameInput" maxlength="10" placeholder="なまえ（例：みけ）">
+        <button @click="saveNickname">決定</button>
       </div>
       <div class="videoActions">
         <button @click="doFeed">🐟 エサをやる</button>
@@ -367,6 +401,13 @@ createApp({
       syncMusic();
     }
     const todaysPhrase = ref(todaysPhraseText());
+    const roomName = ref('');
+    const roomNameModalOpen = ref(false);
+    const roomNameInput = ref('にゃんこ部屋');
+    const currentNickname = ref('');
+    const currentCatLabel = ref('');
+    const nicknameEditing = ref(false);
+    const nicknameInput = ref('');
     const owned = reactive({tower:false, sofa:false, cushion:false, house:false});
     // 価格はコイン。サーバ(server.js FURNITURE_PRICES)と一致させること
     const shop = [
@@ -407,6 +448,10 @@ createApp({
       currentCatName = catName;
       foodWarn.value = false;
       phraseOpen.value = false;
+      currentCatLabel.value = catName;
+      currentNickname.value = (catObj.userData && catObj.userData.nickname) || '';
+      nicknameEditing.value = false;
+      nicknameInput.value = currentNickname.value;
       const urls = await getCatVideoUrls(catName, 'action');
       if(urls.length === 0) return;   // 動画が用意されていない猫はポップアップを開かない
       videoOpen.value = true;
@@ -418,6 +463,26 @@ createApp({
       videoOpen.value = false;
       foodWarn.value = false;
       phraseOpen.value = false;
+      nicknameEditing.value = false;
+    }
+    async function saveNickname(){
+      const name = (nicknameInput.value || '').trim();
+      if(!currentCat || !currentCat.userData || !currentCat.userData.catId || !userId) return;
+      try{
+        const r = await api(`/api/cats/${userId}/${currentCat.userData.catId}`, {name}, 'PATCH');
+        currentCat.userData.nickname = r.nickname;
+        currentNickname.value = r.nickname;
+        nicknameEditing.value = false;
+        showMsg(r.nickname ? `🏷「${r.nickname}」と名づけました` : '名前を削除しました');
+      }catch(e){ showMsg('名前を保存できませんでした'); }
+    }
+    async function saveRoomName(){
+      const name = (roomNameInput.value || '').trim() || 'にゃんこ部屋';
+      roomName.value = name;
+      roomNameModalOpen.value = false;
+      if(userId){
+        try{ await api(`/api/user/${userId}`, {roomName:name}, 'PATCH'); }catch(e){}
+      }
     }
     function togglePhrase(){
       todaysPhrase.value = todaysPhraseText();
@@ -538,21 +603,26 @@ createApp({
         userId = r.userId;
         localStorage.setItem('nekoUserId', userId);
         hud.coins = r.user.coins; hud.food = r.user.food; hud.points = r.user.points;
+        roomName.value = r.user.roomName || '';
+        if(!r.user.roomName) roomNameModalOpen.value = true;   // 初回入室：部屋の名前を決めてもらう
         for(const key of Object.keys(owned)){
           if(r.user.furniture && r.user.furniture[key]){
             engine.purchase(key, {quiet:true});
             owned[key] = true;
           }
         }
-        const fetchCats = async ()=>{
-          const cs = await api(`/api/cats/${userId}`, null, 'GET');
-          for(const entry of cs.cats) engine.receiveEntry(entry, false);
+        // 初回読み込み：過去に獲得済みの猫は演出なしで壁際の定位置に復元する
+        const cs = await api(`/api/cats/${userId}`, null, 'GET');
+        for(const entry of cs.cats) engine.restoreEntry(entry);
+        // 以降のポーリング：ここで初めて見つかった猫は「マイルームへの初来訪」として中央に出現させる
+        const fetchNewCats = async ()=>{
+          const r2 = await api(`/api/cats/${userId}`, null, 'GET');
+          for(const entry of r2.cats) engine.receiveEntry(entry, false);
         };
-        await fetchCats();
         // 猫の到着だけでなくコイン/とくてん/エサ(ゲーム側での変化)も定期的に同期する
         setInterval(async ()=>{
           try{
-            await fetchCats();
+            await fetchNewCats();
             const u = await api(`/api/user/${userId}`, null, 'GET');
             hud.coins = u.user.coins; hud.food = u.user.food; hud.points = u.user.points;
           }catch(e){}
@@ -567,7 +637,9 @@ createApp({
              doResetFurniture, doResetCats, goHome, backToGame,
              videoOpen, catVideo, currentVideoUrl, closeVideo,
              foodWarn, phraseOpen, todaysPhrase, togglePhrase,
-             doFeed, doPlayRoom, doAdventure, helpOpen, musicOn, toggleMusic };
+             doFeed, doPlayRoom, doAdventure, helpOpen, musicOn, toggleMusic,
+             roomName, roomNameModalOpen, roomNameInput, saveRoomName,
+             currentNickname, currentCatLabel, nicknameEditing, nicknameInput, saveNickname };
   }
 }).mount('#app');
 </script></script>
